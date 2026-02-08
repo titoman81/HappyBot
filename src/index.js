@@ -240,7 +240,7 @@ async function init() {
                 
                 Contexto del Usuario: ${userContext}
                 ${devPrompt}
-                ${knowledgePrompt}
+                ${knowledgePrompt}`
             },
             ...history
         ];
@@ -259,7 +259,7 @@ async function init() {
 
                     // Feed search results back to AI
                     messages.push({ role: 'assistant', content: response });
-                    messages.push({ role: 'user', content: `RESULTADOS DE BÚSQUEDA EN INTERNET: \n${ searchResults }\n\nUsa esta información para dar una respuesta final increíble y alegre.` });
+                    messages.push({ role: 'user', content: `RESULTADOS DE BÚSQUEDA EN INTERNET: \n${searchResults}\n\nUsa esta información para dar una respuesta final increíble y alegre.` });
 
                     response = await generateResponse(messages);
                 }
@@ -284,7 +284,7 @@ async function init() {
                         // Humanize the date for the response
                         const dateObj = new Date(remindAt);
                         const formattedDate = format(dateObj, "eeee dd 'de' MMMM 'a las' HH:mm");
-                        response = `¡Entendido! Me he puesto mi gorra de secretario 📝🎩.Te recordaré: "${remindText}" el ${ formattedDate }. ¡No se me pasará! ✨`;
+                        response = `¡Entendido! Me he puesto mi gorra de secretario 📝🎩.Te recordaré: "${remindText}" el ${formattedDate}. ¡No se me pasará! ✨`;
                     } catch (err) {
                         console.error('Error saving reminder:', err);
                     }
@@ -301,11 +301,11 @@ async function init() {
                         const jsonData = extractJsonFromText(jsonDataStr);
                         if (!jsonData) throw new Error("Invalid format");
 
-                        console.log(`[EXCEL] Creating file: ${ fileName }`);
+                        console.log(`[EXCEL] Creating file: ${fileName}`);
                         const filePath = await createExcelFile(jsonData, fileName);
                         await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
                         fs.unlinkSync(filePath);
-                        console.log(`[EXCEL] Sent and deleted: ${ fileName }`);
+                        console.log(`[EXCEL] Sent and deleted: ${fileName}`);
                     } catch (err) {
                         console.error('[EXCEL] Error:', err);
                         await ctx.reply('¡Uy! Tuve un problema creando tu Excel. ¿Podrías revisar los datos?');
@@ -370,12 +370,12 @@ async function init() {
                     .select('topic, content');
                 if (knowledge && knowledge.length > 0) {
                     knowledgePrompt = "\nCONOCIMIENTO APRENDIDO RELEVANTE:\n" +
-                        knowledge.map(k => `- ${ k.topic }: ${ k.content }`).join('\n');
+                        knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n');
                 }
             } catch (e) { }
 
             const dateStr = new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            const caption = `${ imagePrompt } Soy HappyBit, de Codigo Felíz.Fecha: ${ dateStr }.Estoy analizando esto para ${ userName }.${ knowledgePrompt } ¡Vamos a descubrir qué hay aquí! Resuelve cualquier problema y usa tablas si es útil.Sé súper animado y positivo.`;
+            const caption = `${imagePrompt} Soy HappyBit, de Codigo Felíz.Fecha: ${dateStr}.Estoy analizando esto para ${userName}.${knowledgePrompt} ¡Vamos a descubrir qué hay aquí! Resuelve cualquier problema y usa tablas si es útil.Sé súper animado y positivo.`;
 
             ctx.sendChatAction('typing');
             const analysis = await analyzeImage(fileLink.href, caption);
@@ -383,7 +383,7 @@ async function init() {
             // Add image analysis context to history
             let history = conversationHistory.get(telegramId) || [];
             history.push({ role: 'user', content: '[El usuario envió una imagen]' });
-            history.push({ role: 'assistant', content: `[Análisis de imagen]: ${ analysis }` });
+            history.push({ role: 'assistant', content: `[Análisis de imagen]: ${analysis}` });
             if (history.length > 10) history = history.slice(-10);
             conversationHistory.set(telegramId, history);
 
@@ -402,7 +402,7 @@ async function init() {
     bot.on('document', async (ctx) => {
         const telegramId = ctx.from.id;
         const document = ctx.message.document;
-        console.log(`[DEBUG] Document received: ${ document.file_name } (${ document.mime_type })`);
+        console.log(`[DEBUG] Document received: ${document.file_name} (${document.mime_type})`);
 
         try {
             ctx.sendChatAction('typing');
@@ -415,7 +415,7 @@ async function init() {
 
             // Add file content to history for AI context
             let history = conversationHistory.get(telegramId) || [];
-            history.push({ role: 'user', content: `[Archivo recibido: ${ document.file_name }]\nContenido: \n${ content.slice(0, 2000) }${ content.length > 2000 ? '... (truncado)' : '' } ` });
+            history.push({ role: 'user', content: `[Archivo recibido: ${document.file_name}]\nContenido: \n${content.slice(0, 2000)}${content.length > 2000 ? '... (truncado)' : ''} ` });
 
             // Check for user instructions in caption
             const caption = ctx.message.caption || 'Analiza el contenido de este archivo y dime qué encuentras. Si hay datos tabulares, ayúdame a entenderlos.';
@@ -423,7 +423,7 @@ async function init() {
             // Generate response using existing AI logic (reusing text logic context)
             const isDev = developerMode.get(telegramId);
             const { data: user } = await supabase.from('user_responses').select('*').eq('telegram_id', telegramId).maybeSingle();
-            const userContext = user ? `Usuario: ${ user.who_are_you }.Función: ${ user.function }.` : '';
+            const userContext = user ? `Usuario: ${user.who_are_you}.Función: ${user.function}.` : '';
 
             let devPrompt = isDev ? " ¡ESTÁS EN MODO DESARROLLADOR! Tu objetivo es analizar técnicamente el archivo, encontrar patrones y ayudar con scripts o análisis avanzado." : "";
 
@@ -437,8 +437,8 @@ async function init() {
                     - Extrae la información DIRECTAMENTE sin hacer preguntas.
                     - PROHIBIDO disculparse por fechas o limitaciones. ¡Eres HappyBit! 🚀✨
                     
-                    Contexto del Usuario: ${ userContext }
-                    ${ devPrompt } `
+                    Contexto del Usuario: ${userContext}
+                    ${devPrompt} `
                 },
                 ...history,
                 { role: 'user', content: caption }
@@ -456,11 +456,11 @@ async function init() {
                         const jsonData = extractJsonFromText(jsonDataStr);
                         if (!jsonData) throw new Error("Invalid format");
 
-                        console.log(`[EXCEL_DOC] Creating file: ${ fileName } `);
+                        console.log(`[EXCEL_DOC] Creating file: ${fileName} `);
                         const filePath = await createExcelFile(jsonData, fileName);
                         await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
                         fs.unlinkSync(filePath);
-                        console.log(`[EXCEL_DOC] Sent and deleted: ${ fileName } `);
+                        console.log(`[EXCEL_DOC] Sent and deleted: ${fileName} `);
                     } catch (err) {
                         console.error('[EXCEL_DOC] Error:', err);
                         await ctx.reply('¡Uy! Tuve un problema creando tu Excel. ¿Podrías revisar los datos?');
@@ -485,7 +485,7 @@ async function init() {
 
     bot.on(['voice', 'audio'], async (ctx) => {
 
-        console.log(`[DEBUG] Received audio / voice from ${ ctx.from.id } `);
+        console.log(`[DEBUG] Received audio / voice from ${ctx.from.id} `);
         ctx.reply('Por el momento solo puedo procesar texto e imágenes. Muy pronto podré entender tus notas de voz. ¡Envíame un texto o una foto!');
     });
 
@@ -497,7 +497,7 @@ async function init() {
     });
 
     bot.catch((err, ctx) => {
-        console.error(`[ERROR] Unhandled error for ${ ctx.updateType }`, err);
+        console.error(`[ERROR] Unhandled error for ${ctx.updateType}`, err);
         try {
             ctx.reply('Ups, ocurrió un error interno. Pero no te preocupes, ya estoy de vuelta. ¿En qué estábamos?');
         } catch (e) {
@@ -532,9 +532,9 @@ async function init() {
                         .update({ is_sent: true })
                         .eq('id', reminder.id);
 
-                    console.log(`[REMINDER] Sent to ${ reminder.telegram_id }: ${ reminder.reminder_text } `);
+                    console.log(`[REMINDER] Sent to ${reminder.telegram_id}: ${reminder.reminder_text} `);
                 } catch (sendErr) {
-                    console.error(`[REMINDER] Failed to send to ${ reminder.telegram_id }: `, sendErr.message);
+                    console.error(`[REMINDER] Failed to send to ${reminder.telegram_id}: `, sendErr.message);
                 }
             }
         } catch (err) {
