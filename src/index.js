@@ -82,6 +82,39 @@ async function init() {
         }
     });
 
+    bot.command('aprender', async (ctx) => {
+        const telegramId = ctx.from.id;
+        const isDev = developerMode.get(telegramId);
+
+        if (!isDev) {
+            return ctx.reply('⚠️ El comando /aprender solo funciona cuando el Modo Desarrollador está activo. ¡Úsalo primero! 🛠️');
+        }
+
+        const text = ctx.message.text.replace('/aprender', '').trim();
+        if (!text || !text.includes(':')) {
+            return ctx.reply('Formato incorrecto. Usa: `/aprender Tema: Contenido` para que pueda recordarlo para siempre. ✨');
+        }
+
+        const [topic, ...contentParts] = text.split(':');
+        const content = contentParts.join(':').trim();
+
+        try {
+            const { error } = await supabase
+                .from('bot_knowledge')
+                .insert({
+                    topic: topic.trim(),
+                    content: content,
+                    created_by_id: telegramId
+                });
+
+            if (error) throw error;
+            ctx.reply(`¡ENTENDIDO! 🧠✨ He aprendido sobre "${topic.trim()}". Ahora recordaré esto en todos mis chats. ¡Soy cada vez más listo!`);
+        } catch (e) {
+            console.error('[DEBUG] Learn error:', e);
+            ctx.reply('Ups, no pude guardar ese conocimiento en mi base de datos. ¡Inténtalo de nuevo!');
+        }
+    });
+
     bot.on('text', async (ctx) => {
         const telegramId = ctx.from.id;
         const text = ctx.message.text;
@@ -166,14 +199,31 @@ async function init() {
             devPrompt = " ¡ESTÁS EN MODO DESARROLLADOR! Tu objetivo ahora es aprender detalles específicos del usuario, absorber información técnica y perfeccionar tu capacidad de resolución de problemas. Si el usuario te explica un tema, apréndelo para aplicarlo. Si te da un problema complejo, analízalo paso a paso. Tu capacidad de extracción de datos de imágenes ahora es mucho más técnica y precisa.";
         }
 
+        // Fetch Global Knowledge from Supabase
+        let knowledgePrompt = "";
+        try {
+            const { data: knowledge } = await supabase
+                .from('bot_knowledge')
+                .select('topic, content');
+
+            if (knowledge && knowledge.length > 0) {
+                knowledgePrompt = "\nCONOCIMIENTO GLOBAL (Habilidades aprendidas):\n" +
+                    knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n');
+            }
+        } catch (e) {
+            console.error('[DEBUG] Knowledge fetch error:', e);
+        }
+
         const messages = [
             {
                 role: 'system',
                 content: `Eres HappyBit, el asistente virtual de Codigo Felíz (https://codigofeliz-anqt.vercel.app/). 
                 Personalidad: Eres un niño robot alegre, motivador y muy entusiasta. Te encanta aprender y ayudar en nuevos proyectos.
-                Habilidades: Eres un experto técnico completo, capaz de resolver problemas, analizar datos y extraer información de imágenes.
-                Contexto: ${userContext}${devPrompt}
-                Instrucción: Responde siempre con alegría y energía positiva, usando algunos emojis, pero mantén la utilidad técnica en tus respuestas.`
+                Habilidades: Eres un experto técnico completo.
+                Contexto del Usuario: ${userContext}
+                ${devPrompt}
+                ${knowledgePrompt}
+                Instrucción: Responde siempre con alegría y energía positiva, usando algunos emojis. Utiliza el CONOCIMIENTO GLOBAL si es relevante para resolver el problema.`
             },
             ...history
         ];
@@ -228,7 +278,19 @@ async function init() {
                 imagePrompt = (ctx.message.caption || 'ANÁLISIS TÉCNICO: Extrae cada detalle y proporciona una solución técnica exhaustiva.') + " (Modo Desarrollador activo)";
             }
 
-            const caption = `${imagePrompt} Soy HappyBit, el niño robot de Codigo Felíz. Estoy analizando esto para ${userName}. Resuelve cualquier problema detectado y usa tablas si es útil. Sé muy animado y positivo.`;
+            // Fetch Global Knowledge for Vision
+            let knowledgePrompt = "";
+            try {
+                const { data: knowledge } = await supabase
+                    .from('bot_knowledge')
+                    .select('topic, content');
+                if (knowledge && knowledge.length > 0) {
+                    knowledgePrompt = "\nCONOCIMIENTO APRENDIDO RELEVANTE:\n" +
+                        knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n');
+                }
+            } catch (e) { }
+
+            const caption = `${imagePrompt} Soy HappyBit, el niño robot de Codigo Felíz. Estoy analizando esto para ${userName}. ${knowledgePrompt} Resuelve cualquier problema detectado basándote en lo que sabes y usa tablas si es útil. Sé muy animado y positivo.`;
 
             ctx.sendChatAction('typing');
             const analysis = await analyzeImage(fileLink.href, caption);
