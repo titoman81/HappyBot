@@ -58,6 +58,26 @@ async function createExcelFile(data, fileName = 'resultado.xlsx') {
             ws = XLSX.utils.json_to_sheet(data);
         }
 
+        // Auto-width logic
+        if (data.length > 0) {
+            const objectKeys = Object.keys(Array.isArray(data) ? (data[0] || {}) : data);
+            const colWidths = objectKeys.map(key => {
+                let maxLen = key.toString().length;
+
+                // Check first 20 rows for content length
+                const sample = Array.isArray(data) ? data.slice(0, 20) : [data];
+                sample.forEach(row => {
+                    const val = row[key];
+                    if (val !== undefined && val !== null) {
+                        maxLen = Math.max(maxLen, val.toString().length);
+                    }
+                });
+
+                return { wch: maxLen + 2 }; // +2 for padding
+            });
+            ws['!cols'] = colWidths;
+        }
+
         XLSX.utils.book_append_sheet(wb, ws, 'Datos');
 
         // Ensure filename ends correctly
