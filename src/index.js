@@ -6,7 +6,7 @@ if (dns.setDefaultResultOrder) {
 const { Telegraf } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 const { generateResponse, analyzeImage } = require('./ai');
-const { downloadTelegramFile, parseFileContent, createExcelFile } = require('./fileProcessor');
+const { downloadTelegramFile, parseFileContent, createExcelFile, extractJsonFromText } = require('./fileProcessor');
 const { searchWeb } = require('./search');
 const fs = require('fs');
 const { format, addMinutes, parseISO } = require('date-fns');
@@ -301,7 +301,9 @@ async function init() {
                     const fileName = match[1].trim();
                     const jsonDataStr = match[2].trim();
                     try {
-                        const jsonData = JSON.parse(jsonDataStr);
+                        const jsonData = extractJsonFromText(jsonDataStr);
+                        if (!jsonData) throw new Error("Invalid format");
+
                         const filePath = await createExcelFile(jsonData, fileName);
                         await ctx.replyWithDocument({ source: filePath, filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
                         fs.unlinkSync(filePath);
@@ -452,7 +454,9 @@ async function init() {
                     const fileName = match[1].trim();
                     const jsonDataStr = match[2].trim();
                     try {
-                        const jsonData = JSON.parse(jsonDataStr);
+                        const jsonData = extractJsonFromText(jsonDataStr);
+                        if (!jsonData) throw new Error("Invalid format");
+
                         const filePath = await createExcelFile(jsonData, fileName);
                         await ctx.replyWithDocument({ source: filePath, filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
                         // Clean up temp file

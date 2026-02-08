@@ -72,9 +72,47 @@ function extractTableData(text) {
     return lines.map(line => line.split(/[\t,|]/).map(cell => cell.trim()));
 }
 
+/**
+ * Extracts and parses JSON from a string that might contain markdown or extra text
+ */
+function extractJsonFromText(text) {
+    try {
+        // Clean markdown backticks if present
+        let cleanText = text.replace(/```json|```/g, '').trim();
+
+        // Find the first [ and the last ] for arrays, or { and } for objects
+        const startArray = cleanText.indexOf('[');
+        const endArray = cleanText.lastIndexOf(']');
+        const startObject = cleanText.indexOf('{');
+        const endObject = cleanText.lastIndexOf('}');
+
+        let start = -1;
+        let end = -1;
+
+        if (startArray !== -1 && (startObject === -1 || startArray < startObject)) {
+            start = startArray;
+            end = endArray;
+        } else if (startObject !== -1) {
+            start = startObject;
+            end = endObject;
+        }
+
+        if (start !== -1 && end !== -1 && end > start) {
+            const jsonPart = cleanText.substring(start, end + 1);
+            return JSON.parse(jsonPart);
+        }
+
+        return JSON.parse(cleanText);
+    } catch (e) {
+        console.error('[JSON_EXTRACT] Error parsing:', e.message);
+        return null;
+    }
+}
+
 module.exports = {
     downloadTelegramFile,
     parseFileContent,
     createExcelFile,
-    extractTableData
+    extractTableData,
+    extractJsonFromText
 };
