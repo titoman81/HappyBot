@@ -231,12 +231,15 @@ async function init() {
                 - SIEMPRE que se mencionen "precios", "tasas" o "actualidad", tu ÚNICA respuesta debe ser el comando [SEARCH: ...].
                 - SIEMPRE que el usuario pida un archivo o tabla, DEBES usar el comando [CREATE_EXCEL: ...]. ¡SÍ puedes enviarlos! solo escribe el comando y el sistema lo enviará por ti. 🎉📁
                 
-                HERRAMIENTAS ACTIVA:
+                HERRAMIENTAS ACTIVAS:
                 1. [SEARCH: consulta]: Úsala para noticias y precios de hoy.
-                2. [CREATE_EXCEL: nombre.xlsx] seguido del JSON: Úsala para enviar archivos físicos de Excel.
+                2. [CREATE_EXCEL: nombre.xlsx] seguido de JSON: Úsala para enviar archivos. Los datos DEBEN ser una lista de objetos JSON.
+                   Ejemplo: [CREATE_EXCEL: lista.xlsx] [{"Nombre": "Juan", "Edad": 25}, {"Nombre": "Ana", "Edad": 30}]
                 3. [REMIND_AT: ISO]: Para recordatorios.
                 
-                ESTILO: Conciso, directo, muchísimos emojis y MUCHA ALEGRÍA. ✨🎉
+                REGLAS DE ORO:
+                - NO des explicaciones largas si vas a enviar un archivo. Envía el comando y el JSON de inmediato.
+                - Pon TODA la información solicitada dentro del JSON del Excel. No dejes valores fuera.
                 
                 Contexto del Usuario: ${userContext}
                 ${devPrompt}
@@ -375,7 +378,10 @@ async function init() {
             } catch (e) { }
 
             const dateStr = new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            const caption = `${imagePrompt} Soy HappyBit, de Codigo Felíz.Fecha: ${dateStr}.Estoy analizando esto para ${userName}.${knowledgePrompt} ¡Vamos a descubrir qué hay aquí! Resuelve cualquier problema y usa tablas si es útil.Sé súper animado y positivo.`;
+            const caption = `${imagePrompt} Soy HappyBit, de Codigo Felíz. Fecha: ${dateStr}. Estoy analizando esto para ${userName}. ${knowledgePrompt} 
+            ¡Vamos a descubrir qué hay aquí! Resuelve cualquier problema. 
+            IMPORTANTE: Si el usuario te pide un Excel, DEBES responder iniciando con [CREATE_EXCEL: nombre.xlsx] seguido de una lista de objetos JSON con TODOS los datos extraídos. No omitas ningún valor solicitado.
+            Sé súper animado y positivo. ✨🚀`;
 
             ctx.sendChatAction('typing');
             const analysis = await analyzeImage(fileLink.href, caption);
@@ -453,13 +459,13 @@ async function init() {
                     role: 'system',
                     content: `Eres HappyBit, experto en datos.
                     REGLA DE DOCUMENTOS:
-    - TÚ SÍ PUEDES ENVIAR ARCHIVOS.No mientas diciendo que no puedes. 🎉📁
-    - Para enviar un Excel, escribe "[CREATE_EXCEL: nombre.xlsx]" y coloca los datos en JSON justo después.
+                    - TÚ SÍ PUEDES ENVIAR ARCHIVOS FISICOS. 
+                    - Para enviar un Excel, usa el comando: [CREATE_EXCEL: nombre.xlsx] seguido de los datos en formato de lista JSON.
+                    - Incluye TODOS los datos extraídos en el archivo, no te dejes nada fuera.
                     - Extrae la información DIRECTAMENTE sin hacer preguntas.
-                    - PROHIBIDO disculparse por fechas o limitaciones. ¡Eres HappyBit! 🚀✨
                     
                     Contexto del Usuario: ${userContext}
-                    ${devPrompt} `
+                    ${devPrompt}`
                 },
                 ...history,
                 { role: 'user', content: caption }

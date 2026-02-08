@@ -77,12 +77,25 @@ async function createExcelFile(data, fileName = 'resultado.xlsx') {
  * Extracts structured data from text if it looks like a table
  */
 function extractTableData(text) {
-    // This is a simple helper, AI usually does a better job.
-    // We can use this to try and "edit" files by converting AI response back to Excel.
     const lines = text.trim().split('\n');
     if (lines.length < 2) return null;
 
-    return lines.map(line => line.split(/[\t,|]/).map(cell => cell.trim()));
+    const data = lines.map(line => {
+        // Split by separators
+        let cells = line.split(/[\t,|]/).map(cell => cell.trim());
+
+        // Remove empty cells at the start and end (common in markdown tables: | cell |)
+        if (cells[0] === '') cells.shift();
+        if (cells[cells.length - 1] === '') cells.pop();
+
+        return cells;
+    });
+
+    // Filter out separator rows (like |---|---|)
+    return data.filter(row => {
+        const isSeparator = row.every(cell => /^[-:|]+$/.test(cell));
+        return !isSeparator && row.length > 0;
+    });
 }
 
 /**
