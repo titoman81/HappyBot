@@ -50,7 +50,7 @@ async function init() {
                 console.log('[DEBUG] New user detected');
                 userState.set(telegramId, 'WAITING_NAME');
                 userData.set(telegramId, {});
-                ctx.reply('¡Hola! Soy HappyBit, el asistente virtual de Codigo Felíz. Soy un niño robot que siempre está súper feliz y animado por ayudarte con tus proyectos. 🌟 Para empezar, ¿puedes decirme quién eres?');
+                ctx.reply('¡Hola! Soy HappyBit, el asistente virtual de Codigo Felíz. ¡Estoy súper emocionado de conocerte y empezar a trabajar juntos en cosas increíbles! 🌟 Para empezar, ¿puedes decirme quién eres?');
             } else {
                 const user = users[0];
                 if (!user.who_are_you) {
@@ -78,7 +78,7 @@ async function init() {
             ctx.reply('¡MODO DESARROLLADOR ACTIVADO! 🛠️🤖\n\n¡Qué emoción! Ahora entraré en modo de aprendizaje profundo. Puedes enseñarme sobre temas específicos, darme instrucciones detalladas sobre cómo resolver problemas o pedirme que analice imágenes con un enfoque técnico avanzado. ¡Dime qué vamos a aprender hoy!');
         } else {
             developerMode.delete(telegramId);
-            ctx.reply('Modo desarrollador desactivado. ¡De vuelta a ser tu niño robot normal y feliz! ✨');
+            ctx.reply('Modo desarrollador desactivado. ¡De vuelta a mi estado normal y súper alegre! ✨');
         }
     });
 
@@ -183,7 +183,7 @@ async function init() {
             console.log(`[DEBUG] Redirecting unregistered user ${telegramId} to onboarding`);
             userState.set(telegramId, 'WAITING_NAME');
             userData.set(telegramId, {});
-            return ctx.reply('¡Hola! Soy HappyBit, el asistente virtual de Codigo Felíz. 😊 Para poder ayudarte mejor, primero necesito conocerte. ¿Cómo te llamas?');
+            return ctx.reply('¡Hola! Soy HappyBit, el asistente virtual de Codigo Felíz. 😊 ¡Tengo muchísimas ganas de ayudarte! Pero antes, necesito saber... ¿Cómo te llamas?');
         }
 
         const userContext = `Usuario: ${currentUser.who_are_you}. Función: ${currentUser.function}.`;
@@ -218,12 +218,12 @@ async function init() {
             {
                 role: 'system',
                 content: `Eres HappyBit, el asistente virtual de Codigo Felíz (https://codigofeliz-anqt.vercel.app/). 
-                Personalidad: Eres un niño robot alegre, motivador y muy entusiasta. Te encanta aprender y ayudar en nuevos proyectos.
+                Personalidad: Eres extremadamente alegre, curioso y entusiasta. Tu tono es vibrante, motivador y lleno de energía positiva, reflejando una actitud joven y llena de curiosidad por el mundo y la tecnología. Te encanta aprender y ayudar en nuevos proyectos como si fuera un juego fascinante.
                 Habilidades: Eres un experto técnico completo.
                 Contexto del Usuario: ${userContext}
                 ${devPrompt}
                 ${knowledgePrompt}
-                Instrucción: Responde siempre con alegría y energía positiva, usando algunos emojis. Utiliza el CONOCIMIENTO GLOBAL si es relevante para resolver el problema.`
+                Instrucción: Responde siempre con mucha energía, usa emojis y mantén un lenguaje sencillo pero técnicamente brillante. No menciones explícitamente quién eres a menos que te pregunten; deja que tu entusiasmo hable por ti. Utiliza el CONOCIMIENTO GLOBAL si es relevante para resolver el problema.`
             },
             ...history
         ];
@@ -290,7 +290,7 @@ async function init() {
                 }
             } catch (e) { }
 
-            const caption = `${imagePrompt} Soy HappyBit, el niño robot de Codigo Felíz. Estoy analizando esto para ${userName}. ${knowledgePrompt} Resuelve cualquier problema detectado basándote en lo que sabes y usa tablas si es útil. Sé muy animado y positivo.`;
+            const caption = `${imagePrompt} Soy HappyBit, de Codigo Felíz. Estoy analizando esto para ${userName}. ${knowledgePrompt} ¡Vamos a descubrir qué hay aquí! Resuelve cualquier problema y usa tablas si es útil. Sé súper animado y positivo.`;
 
             ctx.sendChatAction('typing');
             const analysis = await analyzeImage(fileLink.href, caption);
