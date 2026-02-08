@@ -6,6 +6,11 @@ if (dns.setDefaultResultOrder) {
 const { Telegraf } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 const { generateResponse, analyzeImage } = require('./ai');
+const { downloadTelegramFile, parseFileContent, createExcelFile } = require('./fileProcessor');
+const { searchWeb } = require('./search');
+const fs = require('fs');
+const { format, addMinutes, parseISO } = require('date-fns');
+
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const supabase = createClient(
@@ -223,14 +228,86 @@ async function init() {
                 Contexto del Usuario: ${userContext}
                 ${devPrompt}
                 ${knowledgePrompt}
-                Instrucción: Responde siempre con mucha energía, usa emojis y mantén un lenguaje sencillo pero técnicamente brillante. No menciones explícitamente quién eres a menos que te pregunten; deja que tu entusiasmo hable por ti. Utiliza el CONOCIMIENTO GLOBAL si es relevante para resolver el problema.`
+                Instrucción: Responde siempre con mucha energía, usa emojis y mantén un lenguaje sencillo pero técnicamente brillante. No menciones explícitamente quién eres a menos que te pregunten; deja que tu entusiasmo hable por ti. Utiliza el CONOCIMIENTO GLOBAL si es relevante para resolver el problema.
+                Si el usuario te pide investigar algo reciente o buscar en internet, responde PRIMERO con la frase "[SEARCH: tu consulta de búsqueda]" para que yo busque la información por ti.
+                Si el usuario te pide crear un recordatorio, responde con la frase "[REMIND_AT: ISO_DATETIME] Mensaje del recordatorio". Por ejemplo: "[REMIND_AT: 2026-02-09T10:00:00Z] Comprar café". Asegúrate de calcular la fecha y hora actual relativa a: ${new Date().toISOString()}.
+                Si el usuario te pide crear un archivo Excel o una tabla de datos, puedes generar los datos en formato JSON diciendo [CREATE_EXCEL: nombre_archivo.xlsx] seguido del JSON de los datos.`
             },
             ...history
         ];
 
         try {
-            const response = await generateResponse(messages);
+            let response = await generateResponse(messages);
             console.log('[DEBUG] AI Response success');
+
+            // Check if AI wants to search the web
+            if (response.includes('[SEARCH:')) {
+                const searchMatch = response.match(/\[SEARCH:\s*(.*?)\]/);
+                if (searchMatch) {
+                    const query = searchMatch[1];
+                    ctx.sendChatAction('typing');
+                    const searchResults = await searchWeb(query);
+
+                    // Feed search results back to AI
+                    messages.push({ role: 'assistant', content: response });
+                    messages.push({ role: 'user', content: `RESULTADOS DE BÚSQUEDA EN INTERNET:\n${searchResults}\n\nUsa esta información para dar una respuesta final increíble y alegre.` });
+
+                    response = await generateResponse(messages);
+                }
+            }
+
+            // Check if AI wants to set a reminder
+            if (response.includes('[REMIND_AT:')) {
+                const remindMatch = response.match(/\[REMIND_AT:\s*(.*?)\]\s*(.*)/);
+                if (remindMatch) {
+                    const remindAt = remindMatch[1].trim();
+                    const remindText = remindMatch[2].trim();
+                    try {
+                        const { error } = await supabase
+                            .from('reminders')
+                            .insert({
+                                telegram_id: telegramId,
+                                reminder_text: remindText,
+                                remind_at: remindAt
+                            });
+                        if (error) throw error;
+
+                        // Humanize the date for the response
+                        const dateObj = new Date(remindAt);
+                        const formattedDate = format(dateObj, "eeee dd 'de' MMMM 'a las' HH:mm");
+                        response = `¡Entendido! Me he puesto mi gorra de secretario 📝🎩. Te recordaré: "${remindText}" el ${formattedDate}. ¡No se me pasará! ✨`;
+                    } catch (err) {
+                        console.error('Error saving reminder:', err);
+                    }
+                }
+            }
+
+            // Check if AI wants to create an Excel
+            if (response.includes('[CREATE_EXCEL:')) {
+                const match = response.match(/\[CREATE_EXCEL:\s*(.*?\.xlsx)\]\s*([\s\S]*)/);
+                if (match) {
+                    const fileName = match[1].trim();
+                    const jsonDataStr = match[2].trim();
+                    try {
+                        const jsonData = JSON.parse(jsonDataStr);
+                        const filePath = await createExcelFile(jsonData, fileName);
+                        await ctx.replyWithDocument({ source: filePath, filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
+                        fs.unlinkSync(filePath);
+                    } catch (err) {
+                        console.error('Error creating excel from AI response:', err);
+                        await ctx.reply(response);
+                    }
+                } else {
+                    await ctx.reply(response);
+                }
+            } else {
+                try {
+                    await ctx.reply(response, { parse_mode: 'Markdown' });
+                } catch (replyErr) {
+                    console.warn('[DEBUG] Markdown reply failed, falling back to plain text:', replyErr.message);
+                    await ctx.reply(response);
+                }
+            }
 
             // Save AI response to history
             history.push({ role: 'assistant', content: response });
@@ -238,12 +315,6 @@ async function init() {
             if (history.length > 10) history = history.slice(-10);
             conversationHistory.set(telegramId, history);
 
-            try {
-                await ctx.reply(response, { parse_mode: 'Markdown' });
-            } catch (replyErr) {
-                console.warn('[DEBUG] Markdown reply failed, falling back to plain text:', replyErr.message);
-                await ctx.reply(response);
-            }
         } catch (err) {
             console.error('[DEBUG] AI Final error:', err);
             ctx.reply('Tuve un pequeño problema con la IA, pero aquí sigo. ¿Podrías intentar de nuevo?');
@@ -314,7 +385,85 @@ async function init() {
         }
     });
 
+    bot.on('document', async (ctx) => {
+        const telegramId = ctx.from.id;
+        const document = ctx.message.document;
+        console.log(`[DEBUG] Document received: ${document.file_name} (${document.mime_type})`);
+
+        try {
+            ctx.sendChatAction('typing');
+            const buffer = await downloadTelegramFile(ctx, document.file_id);
+            const content = await parseFileContent(buffer, document.file_name);
+
+            if (!content) {
+                return ctx.reply('¡Vaya! Por ahora solo puedo leer archivos de texto (.txt), CSV y Excel (.xlsx, .xls). ¡Prueba con uno de esos y verás qué magia hacemos! ✨');
+            }
+
+            // Add file content to history for AI context
+            let history = conversationHistory.get(telegramId) || [];
+            history.push({ role: 'user', content: `[Archivo recibido: ${document.file_name}]\nContenido:\n${content.slice(0, 2000)}${content.length > 2000 ? '... (truncado)' : ''}` });
+
+            // Check for user instructions in caption
+            const caption = ctx.message.caption || 'Analiza el contenido de este archivo y dime qué encuentras. Si hay datos tabulares, ayúdame a entenderlos.';
+
+            // Generate response using existing AI logic (reusing text logic context)
+            const isDev = developerMode.get(telegramId);
+            const { data: user } = await supabase.from('user_responses').select('*').eq('telegram_id', telegramId).maybeSingle();
+            const userContext = user ? `Usuario: ${user.who_are_you}. Función: ${user.function}.` : '';
+
+            let devPrompt = isDev ? " ¡ESTÁS EN MODO DESARROLLADOR! Tu objetivo es analizar técnicamente el archivo, encontrar patrones y ayudar con scripts o análisis avanzado." : "";
+
+            const messages = [
+                {
+                    role: 'system',
+                    content: `Eres HappyBit, el asistente virtual de Codigo Felíz.
+                    Eres un experto en análisis de datos y archivos.
+                    Contexto del Usuario: ${userContext}
+                    ${devPrompt}
+                    Instrucción: Acabas de recibir un archivo. Analiza su contenido y responde con entusiasmo. Si el usuario te pide editarlo o crear uno nuevo basado en esto, puedes generar datos en formato JSON diciendo [CREATE_EXCEL: nombre_archivo.xlsx] seguido del JSON de los datos.`
+                },
+                ...history,
+                { role: 'user', content: caption }
+            ];
+
+            const response = await generateResponse(messages);
+
+            // Check if AI wants to create an Excel
+            if (response.includes('[CREATE_EXCEL:')) {
+                const match = response.match(/\[CREATE_EXCEL:\s*(.*?\.xlsx)\]\s*([\s\S]*)/);
+                if (match) {
+                    const fileName = match[1].trim();
+                    const jsonDataStr = match[2].trim();
+                    try {
+                        const jsonData = JSON.parse(jsonDataStr);
+                        const filePath = await createExcelFile(jsonData, fileName);
+                        await ctx.replyWithDocument({ source: filePath, filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
+                        // Clean up temp file
+                        fs.unlinkSync(filePath);
+                    } catch (err) {
+                        console.error('Error creating excel from AI response:', err);
+                        await ctx.reply(response);
+                    }
+                } else {
+                    await ctx.reply(response);
+                }
+            } else {
+                await ctx.reply(response, { parse_mode: 'Markdown' });
+            }
+
+            // Save AI response to history
+            history.push({ role: 'assistant', content: response });
+            if (history.length > 10) history = history.slice(-10);
+            conversationHistory.set(telegramId, history);
+
+        } catch (e) {
+            console.error('Document error', e);
+            ctx.reply('¡Uy! Tuve un problemilla leyendo ese archivo. ¿Estás seguro de que no está dañado? ¡Inténtalo de nuevo!');
+        }
+    });
+
     bot.on(['voice', 'audio'], async (ctx) => {
+
         console.log(`[DEBUG] Received audio/voice from ${ctx.from.id}`);
         ctx.reply('Por el momento solo puedo procesar texto e imágenes. Muy pronto podré entender tus notas de voz. ¡Envíame un texto o una foto!');
     });
@@ -340,6 +489,37 @@ async function init() {
 
     process.once('SIGINT', () => bot.stop('SIGINT'));
     process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+    // --- REMINDER CHECKER INTERVAL ---
+    setInterval(async () => {
+        const now = new Date().toISOString();
+        try {
+            const { data: dueReminders, error } = await supabase
+                .from('reminders')
+                .select('*')
+                .eq('is_sent', false)
+                .lte('remind_at', now);
+
+            if (error) throw error;
+
+            for (const reminder of dueReminders) {
+                try {
+                    await bot.telegram.sendMessage(reminder.telegram_id, `🔔 ¡HOLA! Vengo a cumplir mi labor de secretario. 📝✨\n\nRECORDATORIO: "${reminder.reminder_text}"`);
+
+                    await supabase
+                        .from('reminders')
+                        .update({ is_sent: true })
+                        .eq('id', reminder.id);
+
+                    console.log(`[REMINDER] Sent to ${reminder.telegram_id}: ${reminder.reminder_text}`);
+                } catch (sendErr) {
+                    console.error(`[REMINDER] Failed to send to ${reminder.telegram_id}:`, sendErr.message);
+                }
+            }
+        } catch (err) {
+            console.error('[REMINDER] Checker error:', err);
+        }
+    }, 60000); // Check every minute
 }
 
 init();
