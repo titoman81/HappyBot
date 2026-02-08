@@ -48,16 +48,29 @@ async function parseFileContent(buffer, fileName) {
  * Creates an Excel file from JSON data and returns the path to the temporary file
  */
 async function createExcelFile(data, fileName = 'resultado.xlsx') {
-    const wb = XLSX.utils.book_new();
+    try {
+        const wb = XLSX.utils.book_new();
+        let ws;
 
-    // data should be an array of objects or an array of arrays
-    const ws = XLSX.utils.json_to_sheet(data);
-    XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+        if (Array.isArray(data) && Array.isArray(data[0])) {
+            ws = XLSX.utils.aoa_to_sheet(data);
+        } else {
+            ws = XLSX.utils.json_to_sheet(data);
+        }
 
-    const tempPath = path.join(process.cwd(), fileName);
-    XLSX.writeFile(wb, tempPath);
+        XLSX.utils.book_append_sheet(wb, ws, 'Datos');
 
-    return tempPath;
+        // Ensure filename ends correctly
+        if (!fileName.endsWith('.xlsx')) fileName += '.xlsx';
+
+        const tempPath = path.join(process.cwd(), fileName);
+        XLSX.writeFile(wb, tempPath);
+
+        return tempPath;
+    } catch (e) {
+        console.error('[EXCEL_CORE] Error:', e.message);
+        throw e;
+    }
 }
 
 /**
@@ -73,38 +86,50 @@ function extractTableData(text) {
 }
 
 /**
- * Extracts and parses JSON from a string that might contain markdown or extra text
+ * Extracts and parses JSON or tabular data from a string
  */
 function extractJsonFromText(text) {
     try {
         // Clean markdown backticks if present
         let cleanText = text.replace(/```json|```/g, '').trim();
 
-        // Find the first [ and the last ] for arrays, or { and } for objects
+        // Strategy 1: Look for JSON Array
         const startArray = cleanText.indexOf('[');
         const endArray = cleanText.lastIndexOf(']');
+        if (startArray !== -1 && endArray !== -1 && endArray > startArray) {
+            try {
+                const jsonPart = cleanText.substring(startArray, endArray + 1);
+                return JSON.parse(jsonPart);
+            } catch (e) { /* ignore and try next */ }
+        }
+
+        // Strategy 2: Look for JSON Object
         const startObject = cleanText.indexOf('{');
         const endObject = cleanText.lastIndexOf('}');
-
-        let start = -1;
-        let end = -1;
-
-        if (startArray !== -1 && (startObject === -1 || startArray < startObject)) {
-            start = startArray;
-            end = endArray;
-        } else if (startObject !== -1) {
-            start = startObject;
-            end = endObject;
+        if (startObject !== -1 && endObject !== -1 && endObject > startObject) {
+            try {
+                const jsonPart = cleanText.substring(startObject, endObject + 1);
+                return JSON.parse(jsonPart);
+            } catch (e) { /* ignore and try next */ }
         }
 
-        if (start !== -1 && end !== -1 && end > start) {
-            const jsonPart = cleanText.substring(start, end + 1);
-            return JSON.parse(jsonPart);
+        // Strategy 3: Try to parse as a markdown table or CSV-like text
+        const tableData = extractTableData(cleanText);
+        if (tableData && tableData.length > 1) {
+            // Convert array of arrays to array of objects
+            const headers = tableData[0];
+            return tableData.slice(1).map(row => {
+                const obj = {};
+                headers.forEach((h, i) => {
+                    obj[h || `Columna ${i + 1}`] = row[i] || '';
+                });
+                return obj;
+            });
         }
 
-        return JSON.parse(cleanText);
+        return null;
     } catch (e) {
-        console.error('[JSON_EXTRACT] Error parsing:', e.message);
+        console.error('[JSON_EXTRACT] Critical error:', e.message);
         return null;
     }
 }

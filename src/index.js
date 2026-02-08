@@ -388,6 +388,27 @@ async function init() {
             conversationHistory.set(telegramId, history);
 
             try {
+                // Check if Vision AI wants to create an Excel (sometimes it does if asked in caption)
+                if (analysis.includes('[CREATE_EXCEL:')) {
+                    const match = analysis.match(/\[CREATE_EXCEL:\s*(.*?\.xlsx)\]\s*([\s\S]*)/);
+                    if (match) {
+                        const fileName = match[1].trim();
+                        const jsonDataStr = match[2].trim();
+                        try {
+                            const jsonData = extractJsonFromText(jsonDataStr);
+                            if (jsonData) {
+                                console.log(`[EXCEL_VISION] Creating file: ${fileName}`);
+                                const filePath = await createExcelFile(jsonData, fileName);
+                                await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: '¡He extraído los datos de la imagen para ti! ✨🚀' });
+                                fs.unlinkSync(filePath);
+                                return; // Stop here if excel sent
+                            }
+                        } catch (err) {
+                            console.error('[EXCEL_VISION] Error:', err);
+                        }
+                    }
+                }
+
                 await ctx.reply(analysis, { parse_mode: 'Markdown' });
             } catch (replyErr) {
                 console.warn('[DEBUG] Vision Markdown reply failed, falling back to plain text:', replyErr.message);
