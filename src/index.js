@@ -304,12 +304,14 @@ async function init() {
                         const jsonData = extractJsonFromText(jsonDataStr);
                         if (!jsonData) throw new Error("Invalid format");
 
+                        console.log(`[EXCEL] Creating file: ${fileName}`);
                         const filePath = await createExcelFile(jsonData, fileName);
-                        await ctx.replyWithDocument({ source: filePath, filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
+                        await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
                         fs.unlinkSync(filePath);
+                        console.log(`[EXCEL] Sent and deleted: ${fileName}`);
                     } catch (err) {
-                        console.error('Error creating excel from AI response:', err);
-                        await ctx.reply(response);
+                        console.error('[EXCEL] Error:', err);
+                        await ctx.reply('¡Uy! Tuve un problema creando tu Excel. ¿Podrías revisar los datos?');
                     }
                 } else {
                     await ctx.reply(response);
@@ -457,13 +459,14 @@ async function init() {
                         const jsonData = extractJsonFromText(jsonDataStr);
                         if (!jsonData) throw new Error("Invalid format");
 
+                        console.log(`[EXCEL_DOC] Creating file: ${fileName}`);
                         const filePath = await createExcelFile(jsonData, fileName);
-                        await ctx.replyWithDocument({ source: filePath, filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
-                        // Clean up temp file
+                        await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
                         fs.unlinkSync(filePath);
+                        console.log(`[EXCEL_DOC] Sent and deleted: ${fileName}`);
                     } catch (err) {
-                        console.error('Error creating excel from AI response:', err);
-                        await ctx.reply(response);
+                        console.error('[EXCEL_DOC] Error:', err);
+                        await ctx.reply('¡Uy! Tuve un problema creando tu Excel. ¿Podrías revisar los datos?');
                     }
                 } else {
                     await ctx.reply(response);
