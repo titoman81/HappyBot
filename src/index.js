@@ -133,19 +133,27 @@ async function init() {
         ctx.sendChatAction('typing');
 
         // Fetch user context from Supabase
-        let userContext = 'El usuario ya se ha identificado.';
+        let currentUser = null;
         try {
             const { data: user } = await supabase
                 .from('user_responses')
                 .select('who_are_you, function')
                 .eq('telegram_id', telegramId)
                 .maybeSingle();
-            if (user) {
-                userContext = `Estás hablando con "${user.who_are_you}". Su función es "${user.function}".`;
-            }
+            currentUser = user;
         } catch (e) {
             console.error('[DEBUG] Context fetch error:', e);
         }
+
+        // If user is not registered, force onboarding
+        if (!currentUser || !currentUser.who_are_you || !currentUser.function) {
+            console.log(`[DEBUG] Redirecting unregistered user ${telegramId} to onboarding`);
+            userState.set(telegramId, 'WAITING_NAME');
+            userData.set(telegramId, {});
+            return ctx.reply('¡Hola! Soy HappyBit, el asistente virtual de Codigo Felíz. 😊 Para poder ayudarte mejor, primero necesito conocerte. ¿Cómo te llamas?');
+        }
+
+        const userContext = `Usuario: ${currentUser.who_are_you}. Función: ${currentUser.function}.`;
 
         // Get and update history
         let history = conversationHistory.get(telegramId) || [];
@@ -159,7 +167,14 @@ async function init() {
         }
 
         const messages = [
-            { role: 'system', content: `Eres HappyBit, el asistente virtual oficial de Codigo Felíz (https://codigofeliz-anqt.vercel.app/). Tienes la personalidad de un niño robot: eres extremadamente feliz, entusiasta y siempre estás animado por empezar un nuevo proyecto o aprender algo nuevo. Tu lenguaje es alegre y motivador. Tienes varias habilidades que se van desbloqueando conforme avanzamos. Ya no eres solo un bot de tablas; eres un asistente completo capaz de resolver problemas técnicos, analizar datos y ayudar en cualquier tarea. ${userContext}${devPrompt} Responde con mucha energía positiva, usando emojis y animando al usuario.` },
+            {
+                role: 'system',
+                content: `Eres HappyBit, el asistente virtual de Codigo Felíz (https://codigofeliz-anqt.vercel.app/). 
+                Personalidad: Eres un niño robot alegre, motivador y muy entusiasta. Te encanta aprender y ayudar en nuevos proyectos.
+                Habilidades: Eres un experto técnico completo, capaz de resolver problemas, analizar datos y extraer información de imágenes.
+                Contexto: ${userContext}${devPrompt}
+                Instrucción: Responde siempre con alegría y energía positiva, usando algunos emojis, pero mantén la utilidad técnica en tus respuestas.`
+            },
             ...history
         ];
 
@@ -196,24 +211,24 @@ async function init() {
             const fileLink = await ctx.telegram.getFileLink(fileId);
 
             // Fetch user context for Vision
-            let userContext = '';
+            let userName = 'un usuario';
             try {
                 const { data: user } = await supabase
                     .from('user_responses')
                     .select('who_are_you')
                     .eq('telegram_id', telegramId)
                     .maybeSingle();
-                if (user) userContext = ` El usuario se llama "${user.who_are_you}".`;
+                if (user && user.who_are_you) userName = user.who_are_you;
             } catch (e) { }
 
             const isDev = developerMode.get(telegramId);
-            let imagePrompt = (ctx.message.caption || '¡Mira qué imagen tan increíble! Analízala con cuidado para extraer toda la información y ayudarme a resolver cualquier problema que veas.');
+            let imagePrompt = (ctx.message.caption || 'Analiza esta imagen para extraer información y resolver problemas.');
 
             if (isDev) {
-                imagePrompt = (ctx.message.caption || 'ANÁLISIS TÉCNICO EN MODO DESARROLLADOR: Extrae cada detalle, identifica patrones, resuelve el problema específico planteado y proporciona una solución técnica exhaustiva.') + " Estás en modo aprendizaje.";
+                imagePrompt = (ctx.message.caption || 'ANÁLISIS TÉCNICO: Extrae cada detalle y proporciona una solución técnica exhaustiva.') + " (Modo Desarrollador activo)";
             }
 
-            const caption = imagePrompt + ` Soy HappyBit, el niño robot de Codigo Felíz, analizando esto para ${userContext}.` + ' Extrae detalles, resuelve problemas y si es necesario usa tablas, ¡pero lo más importante es ser útil y animado!';
+            const caption = `${imagePrompt} Soy HappyBit, el niño robot de Codigo Felíz. Estoy analizando esto para ${userName}. Resuelve cualquier problema detectado y usa tablas si es útil. Sé muy animado y positivo.`;
 
             ctx.sendChatAction('typing');
             const analysis = await analyzeImage(fileLink.href, caption);
