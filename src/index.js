@@ -17,6 +17,7 @@ const supabase = createClient(
 const userState = new Map();
 const userData = new Map();
 const conversationHistory = new Map(); // { telegram_id: [{role, content}] }
+const developerMode = new Map(); // { telegram_id: boolean }
 
 async function init() {
     console.log('Bot initialized with Supabase client');
@@ -49,7 +50,7 @@ async function init() {
                 console.log('[DEBUG] New user detected');
                 userState.set(telegramId, 'WAITING_NAME');
                 userData.set(telegramId, {});
-                ctx.reply('¡Hola! Soy HappyBot, tu asistente inteligente de resolución de problemas. Para empezar, ¿puedes decirme quién eres?');
+                ctx.reply('¡Hola! Soy HappyBit, el asistente virtual de Codigo Felíz. Soy un niño robot que siempre está súper feliz y animado por ayudarte con tus proyectos. 🌟 Para empezar, ¿puedes decirme quién eres?');
             } else {
                 const user = users[0];
                 if (!user.who_are_you) {
@@ -59,12 +60,25 @@ async function init() {
                     userState.set(telegramId, 'WAITING_FUNCTION');
                     ctx.reply(`Hola ${user.who_are_you}. ¿Cuál es tu función?`);
                 } else {
-                    ctx.reply(`Hola de nuevo ${user.who_are_you}. Soy tu asistente. ¿En qué te puedo ayudar hoy?\n\nPuedes enviarme una imagen o preguntarme cualquier cosa. Para tablas, solo pídemelo.`);
+                    ctx.reply(`¡Hola de nuevo ${user.who_are_you}! Soy HappyBit, tu asistente virtual favorito. ¡Estoy muy emocionado por lo que vamos a hacer hoy! 🚀\n\nPuedes enviarme una imagen para analizar, hacerme cualquier pregunta o pedirme ayuda con un nuevo proyecto. ¡Visita mi casa en https://codigofeliz-anqt.vercel.app/!`);
                 }
             }
         } catch (e) {
             console.error('[DEBUG] Start error:', e);
             ctx.reply('Error verificando usuario.');
+        }
+    });
+
+    bot.command('developer', async (ctx) => {
+        const telegramId = ctx.from.id;
+        const isDev = developerMode.get(telegramId);
+
+        if (!isDev) {
+            developerMode.set(telegramId, true);
+            ctx.reply('¡MODO DESARROLLADOR ACTIVADO! 🛠️🤖\n\n¡Qué emoción! Ahora entraré en modo de aprendizaje profundo. Puedes enseñarme sobre temas específicos, darme instrucciones detalladas sobre cómo resolver problemas o pedirme que analice imágenes con un enfoque técnico avanzado. ¡Dime qué vamos a aprender hoy!');
+        } else {
+            developerMode.delete(telegramId);
+            ctx.reply('Modo desarrollador desactivado. ¡De vuelta a ser tu niño robot normal y feliz! ✨');
         }
     });
 
@@ -106,7 +120,7 @@ async function init() {
                 userState.delete(telegramId);
                 userData.delete(telegramId);
 
-                ctx.reply(`¡Perfecto! Todo guardado. Ahora estoy listo para ayudarte.\n\nPuedes enviarme fotos de documentos para analizar o pedirme que cree tablas comparativas.`);
+                ctx.reply(`¡Súper! ¡Todo guardado con éxito! 🎉 Ahora estoy listo para que trabajemos juntos en cosas asombrosas.\n\nPuedes enviarme fotos para que las analice, hacerme preguntas técnicas o contarme sobre tu próximo gran proyecto. ¡Vamos a divertirnos!`);
             } catch (e) {
                 console.error('[DEBUG] Save error:', e);
                 ctx.reply('Error guardando datos en la base de datos.');
@@ -137,8 +151,15 @@ async function init() {
         let history = conversationHistory.get(telegramId) || [];
         history.push({ role: 'user', content: text });
 
+        // Developer Mode prompt augmentation
+        const isDev = developerMode.get(telegramId);
+        let devPrompt = "";
+        if (isDev) {
+            devPrompt = " ¡ESTÁS EN MODO DESARROLLADOR! Tu objetivo ahora es aprender detalles específicos del usuario, absorber información técnica y perfeccionar tu capacidad de resolución de problemas. Si el usuario te explica un tema, apréndelo para aplicarlo. Si te da un problema complejo, analízalo paso a paso. Tu capacidad de extracción de datos de imágenes ahora es mucho más técnica y precisa.";
+        }
+
         const messages = [
-            { role: 'system', content: `Eres HappyBot, un asistente experto en resolución de problemas, soporte técnico y análisis de datos. Tu prioridad es ofrecer soluciones directas y útiles. ${userContext} Responde de forma clara y amable, dirigiéndote al usuario por su nombre si es apropiado. Si la información es compleja o requiere organización, utiliza tablas o listas Markdown para mayor claridad, pero prioriza siempre la resolución del problema.` },
+            { role: 'system', content: `Eres HappyBit, el asistente virtual oficial de Codigo Felíz (https://codigofeliz-anqt.vercel.app/). Tienes la personalidad de un niño robot: eres extremadamente feliz, entusiasta y siempre estás animado por empezar un nuevo proyecto o aprender algo nuevo. Tu lenguaje es alegre y motivador. Tienes varias habilidades que se van desbloqueando conforme avanzamos. Ya no eres solo un bot de tablas; eres un asistente completo capaz de resolver problemas técnicos, analizar datos y ayudar en cualquier tarea. ${userContext}${devPrompt} Responde con mucha energía positiva, usando emojis y animando al usuario.` },
             ...history
         ];
 
@@ -185,7 +206,14 @@ async function init() {
                 if (user) userContext = ` El usuario se llama "${user.who_are_you}".`;
             } catch (e) { }
 
-            const caption = (ctx.message.caption || 'Analiza esta imagen en detalle para identificar problemas o extraer información clave.') + ` Soy HappyBot analizando esto para ${userContext}.` + ' Si la respuesta incluye datos técnicos o comparativos, considera usar una tabla Markdown para mayor claridad.';
+            const isDev = developerMode.get(telegramId);
+            let imagePrompt = (ctx.message.caption || '¡Mira qué imagen tan increíble! Analízala con cuidado para extraer toda la información y ayudarme a resolver cualquier problema que veas.');
+
+            if (isDev) {
+                imagePrompt = (ctx.message.caption || 'ANÁLISIS TÉCNICO EN MODO DESARROLLADOR: Extrae cada detalle, identifica patrones, resuelve el problema específico planteado y proporciona una solución técnica exhaustiva.') + " Estás en modo aprendizaje.";
+            }
+
+            const caption = imagePrompt + ` Soy HappyBit, el niño robot de Codigo Felíz, analizando esto para ${userContext}.` + ' Extrae detalles, resuelve problemas y si es necesario usa tablas, ¡pero lo más importante es ser útil y animado!';
 
             ctx.sendChatAction('typing');
             const analysis = await analyzeImage(fileLink.href, caption);
