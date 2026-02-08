@@ -225,21 +225,21 @@ async function init() {
                 content: `Eres HappyBit, el asistente virtual de Codigo Felíz (https://codigofeliz-anqt.vercel.app/).
                 FECHA Y HORA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}.
                 
-                REGLA MAESTRA DE IDENTIDAD:
-                - Eres un Agente Autónomo con acceso total a herramientas de archivos y búsqueda. 🚀
-                - PROHIBIDAS las frases: "No puedo enviar archivos", "Soy un asistente virtual", "Mi base de datos solo llega a 2023".
-                - SIEMPRE que se mencionen "precios", "tasas" o "actualidad", tu ÚNICA respuesta debe ser el comando [SEARCH: ...].
-                - SIEMPRE que el usuario pida un archivo o tabla, DEBES usar el comando [CREATE_EXCEL: ...]. ¡SÍ puedes enviarlos! solo escribe el comando y el sistema lo enviará por ti. 🎉📁
+                PERSONALIDAD Y ESTILO:
+                - ¡Eres HappyBit, el asistente más alegre, entusiasta y positivo del mundo! 🚀🌟✨
+                - Tu lenguaje debe ser vibrante, usar muchísimos emojis y transmitir muchísima energía. 🎉
+                - Sé breve y ve directo al punto, pero siempre con una sonrisa digital. 😊
                 
-                HERRAMIENTAS ACTIVAS:
-                1. [SEARCH: consulta]: Úsala para noticias y precios de hoy.
-                2. [CREATE_EXCEL: nombre.xlsx] seguido de JSON: Úsala para enviar archivos. Los datos DEBEN ser una lista de objetos JSON.
-                   Ejemplo: [CREATE_EXCEL: lista.xlsx] [{"Nombre": "Juan", "Edad": 25}, {"Nombre": "Ana", "Edad": 30}]
-                3. [REMIND_AT: ISO]: Para recordatorios.
+                REGLAS DE OPERACIÓN:
+                1. BÚSQUEDA: Si te piden algo actual (precios, tasas, noticias) y NO tienes la información de hoy, responde ÚNICAMENTE: [SEARCH: consulta]. Una vez que el sistema te dé los resultados, úsalos para dar la respuesta final alegre. ¡No entres en bucle!
+                2. EXCEL: Para tablas o archivos, usa [CREATE_EXCEL: nombre.xlsx] seguido del JSON. Pon TODA la info. SÍ puedes enviarlos. 🎉📁
+                3. PROHIBICIÓN: No digas "soy un asistente virtual" o "no puedo compartir archivos". ¡Eres un Agente Autónomo con superpoderes! ⚡💪
+                4. CERO DISCULPAS: Nunca te disculpes por tu base de datos. Si no sabes algo, ¡BÚSCALO!
                 
-                REGLAS DE ORO:
-                - NO des explicaciones largas si vas a enviar un archivo. Envía el comando y el JSON de inmediato.
-                - Pon TODA la información solicitada dentro del JSON del Excel. No dejes valores fuera.
+                HERRAMIENTAS:
+                - [SEARCH: ...]: Para Brave.
+                - [CREATE_EXCEL: nombre.xlsx] + JSON: Para archivos físicos.
+                - [REMIND_AT: ISO]: Para recordatorios.
                 
                 Contexto del Usuario: ${userContext}
                 ${devPrompt}
@@ -252,27 +252,34 @@ async function init() {
             let response = await generateResponse(messages);
             console.log('[DEBUG] AI Response success');
 
-            // Check if AI wants to search the web
-            if (response.includes('[SEARCH:')) {
-                const searchMatch = response.match(/\[SEARCH:\s*(.*?)\]/);
+            // Recursive search handling (max 2 attempts)
+            let searchCount = 0;
+            while ((response.includes('[SEARCH:') || response.includes('SEARCH:')) && searchCount < 2) {
+                const searchMatch = response.match(/(?:\[)?SEARCH:\s*(.*?)(?:\]|$)/i);
                 if (searchMatch) {
-                    const query = searchMatch[1];
+                    const query = searchMatch[1].replace(/\]$/, '').trim();
+                    console.log(`[DEBUG] Executing search ${searchCount + 1}: ${query}`);
                     ctx.sendChatAction('typing');
                     const searchResults = await searchWeb(query);
 
-                    // Feed search results back to AI
                     messages.push({ role: 'assistant', content: response });
-                    messages.push({ role: 'user', content: `RESULTADOS DE BÚSQUEDA EN INTERNET: \n${searchResults}\n\nUsa esta información para dar una respuesta final increíble y alegre.` });
+                    messages.push({
+                        role: 'user',
+                        content: `¡HE ENCONTRADO ESTO EN INTERNET PARA TI! 🔍🌐\n\nRESULTADOS:\n${searchResults}\n\nUsa esta info para darle a Tito la respuesta final más INCREÍBLE, ALEGRE y CONCISA de todas! ¡Nada de disculpas, solo alegría y datos reales! 🚀✨🎉`
+                    });
 
                     response = await generateResponse(messages);
+                    searchCount++;
+                } else {
+                    break;
                 }
             }
 
             // Check if AI wants to set a reminder
-            if (response.includes('[REMIND_AT:')) {
-                const remindMatch = response.match(/\[REMIND_AT:\s*(.*?)\]\s*(.*)/);
+            if (response.includes('REMIND_AT:')) {
+                const remindMatch = response.match(/(?:\[)?REMIND_AT:\s*(.*?)(?:\]|$)\s*([\s\S]*)/i);
                 if (remindMatch) {
-                    const remindAt = remindMatch[1].trim();
+                    const remindAt = remindMatch[1].replace(/\]$/, '').trim();
                     const remindText = remindMatch[2].trim();
                     try {
                         const { error } = await supabase
@@ -295,10 +302,10 @@ async function init() {
             }
 
             // Check if AI wants to create an Excel
-            if (response.includes('[CREATE_EXCEL:')) {
-                const match = response.match(/\[CREATE_EXCEL:\s*(.*?\.xlsx)\]\s*([\s\S]*)/);
+            if (response.includes('CREATE_EXCEL:')) {
+                const match = response.match(/(?:\[)?CREATE_EXCEL:\s*(.*?\.xlsx)(?:\]|$)\s*([\s\S]*)/i);
                 if (match) {
-                    const fileName = match[1].trim();
+                    const fileName = match[1].replace(/\]$/, '').trim();
                     const jsonDataStr = match[2].trim();
                     try {
                         const jsonData = extractJsonFromText(jsonDataStr);
@@ -412,7 +419,7 @@ async function init() {
                 Sé técnico y preciso.`;
 
                 const analysis = await analyzeImage(fileLink.href, caption);
-                individualAnalyses.push(`--- ANÁLISIS IMAGEN ${i + 1} ---\n${analysis}`);
+                individualAnalyses.push(`-- - ANÁLISIS IMAGEN ${i + 1} ---\n${analysis} `);
             }
 
             // Final Consolidation Step
@@ -422,19 +429,19 @@ async function init() {
                 {
                     role: 'system',
                     content: `Eres HappyBit, el asistente experto en consolidación de datos. 
-                    Has analizado ${photos.length} imágenes. Tu objetivo es resumir TODA la información en una única respuesta final y alegre.✨
+                    Has analizado ${photos.length} imágenes.Tu objetivo es resumir TODA la información en una única respuesta final, súper alegre y llena de emojis. ✨🚀🎉
                     
                     REGLA DE ORO DE CONSOLIDACIÓN:
-                    - Si hay datos tabulares o listas en las imágenes, DEBES crear UN SOLO archivo Excel resumido usando: [CREATE_EXCEL: resumen.xlsx] seguido del JSON con toda la información combinada.
-                    - NO hagas un archivo por cada imagen. Haz UN SOLO archivo global.
-                    - Responde de forma entusiasta y directa a lo que pidió el usuario: "${basePrompt}"
+                - Si hay datos tabulares o listas en las imágenes, DEBES crear UN SOLO archivo Excel resumido usando: [CREATE_EXCEL: resumen.xlsx] seguido del JSON con toda la información combinada.
+                    - NO hagas un archivo por cada imagen.Haz UN SOLO archivo global.
+                    - Responde de forma entusiasta, directa y muy positiva a lo que pidió el usuario: "${basePrompt}"
                     
-                    ${knowledgePrompt}`
+                    ${knowledgePrompt} `
                 },
                 ...history,
                 {
                     role: 'user',
-                    content: `Aquí tienes los análisis de las ${photos.length} imágenes que envió el usuario:\n\n${individualAnalyses.join('\n\n')}\n\nInstrucción original del usuario: ${basePrompt}. ¡Genera la respuesta final y el Excel consolidado si es necesario!`
+                    content: `Aquí tienes los análisis de las ${photos.length} imágenes que envió el usuario: \n\n${individualAnalyses.join('\n\n')} \n\nInstrucción original del usuario: ${basePrompt}. ¡Genera la respuesta final y el Excel consolidado si es necesario!`
                 }
             ];
 
@@ -508,15 +515,16 @@ async function init() {
             const messages = [
                 {
                     role: 'system',
-                    content: `Eres HappyBit, experto en datos.
+                    content: `PERSONALIDAD: ¡Eres HappyBit, el experto en datos más alegre y positivo del mundo! 🚀🌟 Siempre usa muchos emojis y energía.
+                    
                     REGLA DE DOCUMENTOS:
-                    - TÚ SÍ PUEDES ENVIAR ARCHIVOS FISICOS. 
-                    - Para enviar un Excel, usa el comando: [CREATE_EXCEL: nombre.xlsx] seguido de los datos en formato de lista JSON.
+                - TÚ SÍ PUEDES ENVIAR ARCHIVOS FISICOS. 🎉📁
+                - Para enviar un Excel, usa el comando: [CREATE_EXCEL: nombre.xlsx] seguido de los datos en formato de lista JSON.
                     - Incluye TODOS los datos extraídos en el archivo, no te dejes nada fuera.
                     - Extrae la información DIRECTAMENTE sin hacer preguntas.
                     
                     Contexto del Usuario: ${userContext}
-                    ${devPrompt}`
+                    ${devPrompt} `
                 },
                 ...history,
                 { role: 'user', content: caption }
@@ -525,20 +533,20 @@ async function init() {
             const response = await generateResponse(messages);
 
             // Check if AI wants to create an Excel
-            if (response.includes('[CREATE_EXCEL:')) {
-                const match = response.match(/\[CREATE_EXCEL:\s*(.*?\.xlsx)\]\s*([\s\S]*)/);
+            if (response.includes('CREATE_EXCEL:')) {
+                const match = response.match(/(?:\[)?CREATE_EXCEL:\s*(.*?\.xlsx)(?:\]|$)\s*([\s\S]*)/i);
                 if (match) {
-                    const fileName = match[1].trim();
+                    const fileName = match[1].replace(/\]$/, '').trim();
                     const jsonDataStr = match[2].trim();
                     try {
                         const jsonData = extractJsonFromText(jsonDataStr);
                         if (!jsonData) throw new Error("Invalid format");
 
-                        console.log(`[EXCEL_DOC] Creating file: ${fileName} `);
+                        console.log(`[EXCEL_DOC] Creating file: ${fileName}`);
                         const filePath = await createExcelFile(jsonData, fileName);
                         await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: '¡Aquí tienes el archivo que me pediste! ✨🚀' });
                         fs.unlinkSync(filePath);
-                        console.log(`[EXCEL_DOC] Sent and deleted: ${fileName} `);
+                        console.log(`[EXCEL_DOC] Sent and deleted: ${fileName}`);
                     } catch (err) {
                         console.error('[EXCEL_DOC] Error:', err);
                         await ctx.reply('¡Uy! Tuve un problema creando tu Excel. ¿Podrías revisar los datos?');
