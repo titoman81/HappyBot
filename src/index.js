@@ -337,17 +337,40 @@ async function init() {
         }
     });
 
+    const mediaGroupStore = new Map();
+
     bot.on('photo', async (ctx) => {
-        console.log('[DEBUG] Photo handler triggered');
         const telegramId = ctx.from.id;
-        const photos = ctx.message.photo;
-        const photo = photos[photos.length - 1];
-        const fileId = photo.file_id;
+        const mediaGroupId = ctx.message.media_group_id;
+
+        if (mediaGroupId) {
+            if (!mediaGroupStore.has(mediaGroupId)) {
+                mediaGroupStore.set(mediaGroupId, {
+                    photos: [],
+                    caption: ctx.message.caption,
+                    timeout: setTimeout(async () => {
+                        const group = mediaGroupStore.get(mediaGroupId);
+                        mediaGroupStore.delete(mediaGroupId);
+                        await processImageGroup(ctx, group.photos, group.caption);
+                    }, 1000) // Wait 1 second to collect all photos in the album
+                });
+            }
+            const group = mediaGroupStore.get(mediaGroupId);
+            group.photos.push(ctx.message.photo[ctx.message.photo.length - 1]);
+            if (ctx.message.caption) group.caption = ctx.message.caption;
+            return;
+        }
+
+        // Single photo handling
+        await processImageGroup(ctx, [ctx.message.photo[ctx.message.photo.length - 1]], ctx.message.caption);
+    });
+
+    async function processImageGroup(ctx, photos, groupCaption) {
+        const telegramId = ctx.from.id;
+        console.log(`[DEBUG] Processing ${photos.length} photos from ${telegramId}`);
 
         try {
-            const fileLink = await ctx.telegram.getFileLink(fileId);
-
-            // Fetch user context for Vision
+            let combinedAnalysis = "";
             let userName = 'un usuario';
             try {
                 const { data: user } = await supabase
@@ -359,42 +382,36 @@ async function init() {
             } catch (e) { }
 
             const isDev = developerMode.get(telegramId);
-            let imagePrompt = (ctx.message.caption || 'Analiza esta imagen para extraer información y resolver problemas.');
+            let basePrompt = groupCaption || 'Analiza esta imagen para extraer información.';
+            if (isDev) basePrompt = (groupCaption || 'ANÁLISIS TÉCNICO EXHAUSTIVO.') + " (Modo Desarrollador)";
 
-            if (isDev) {
-                imagePrompt = (ctx.message.caption || 'ANÁLISIS TÉCNICO: Extrae cada detalle y proporciona una solución técnica exhaustiva.') + " (Modo Desarrollador activo)";
-            }
-
-            // Fetch Global Knowledge for Vision
+            // Fetch Knowledge
             let knowledgePrompt = "";
             try {
-                const { data: knowledge } = await supabase
-                    .from('bot_knowledge')
-                    .select('topic, content');
+                const { data: knowledge } = await supabase.from('bot_knowledge').select('topic, content');
                 if (knowledge && knowledge.length > 0) {
-                    knowledgePrompt = "\nCONOCIMIENTO APRENDIDO RELEVANTE:\n" +
-                        knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n');
+                    knowledgePrompt = "\nCONOCIMIENTO RELEVANTE:\n" + knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n');
                 }
             } catch (e) { }
 
             const dateStr = new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            const caption = `${imagePrompt} Soy HappyBit, de Codigo Felíz. Fecha: ${dateStr}. Estoy analizando esto para ${userName}. ${knowledgePrompt} 
-            ¡Vamos a descubrir qué hay aquí! Resuelve cualquier problema. 
-            IMPORTANTE: Si el usuario te pide un Excel, DEBES responder iniciando con [CREATE_EXCEL: nombre.xlsx] seguido de una lista de objetos JSON con TODOS los datos extraídos. No omitas ningún valor solicitado.
-            Sé súper animado y positivo. ✨🚀`;
 
-            ctx.sendChatAction('typing');
-            const analysis = await analyzeImage(fileLink.href, caption);
+            for (let i = 0; i < photos.length; i++) {
+                const photo = photos[i];
+                const fileLink = await ctx.telegram.getFileLink(photo.file_id);
 
-            // Add image analysis context to history
-            let history = conversationHistory.get(telegramId) || [];
-            history.push({ role: 'user', content: '[El usuario envió una imagen]' });
-            history.push({ role: 'assistant', content: `[Análisis de imagen]: ${analysis}` });
-            if (history.length > 10) history = history.slice(-10);
-            conversationHistory.set(telegramId, history);
+                if (photos.length > 1) {
+                    await ctx.reply(`🔍 Analizando imagen ${i + 1} de ${photos.length}...`);
+                } else {
+                    ctx.sendChatAction('typing');
+                }
 
-            try {
-                // Check if Vision AI wants to create an Excel (sometimes it does if asked in caption)
+                const caption = `${basePrompt} Soy HappyBit. Fecha: ${dateStr}. Usuario: ${userName}. ${knowledgePrompt} 
+                IMPORTANTE: Extrae TODO lo que veas. Si el usuario pide Excel, usa [CREATE_EXCEL: nombre.xlsx] con el JSON de los datos.`;
+
+                const analysis = await analyzeImage(fileLink.href, caption);
+
+                // Process Excel if generated in any of the individual analyses
                 if (analysis.includes('[CREATE_EXCEL:')) {
                     const match = analysis.match(/\[CREATE_EXCEL:\s*(.*?\.xlsx)\]\s*([\s\S]*)/);
                     if (match) {
@@ -403,28 +420,36 @@ async function init() {
                         try {
                             const jsonData = extractJsonFromText(jsonDataStr);
                             if (jsonData) {
-                                console.log(`[EXCEL_VISION] Creating file: ${fileName}`);
                                 const filePath = await createExcelFile(jsonData, fileName);
-                                await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: '¡He extraído los datos de la imagen para ti! ✨🚀' });
+                                await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: `✅ ¡Datos de la imagen ${i + 1} listos en Excel! ✨🚀` });
                                 fs.unlinkSync(filePath);
-                                return; // Stop here if excel sent
                             }
-                        } catch (err) {
-                            console.error('[EXCEL_VISION] Error:', err);
-                        }
+                        } catch (err) { console.error('[EXCEL_GROUP] Error:', err); }
                     }
                 }
 
-                await ctx.reply(analysis, { parse_mode: 'Markdown' });
-            } catch (replyErr) {
-                console.warn('[DEBUG] Vision Markdown reply failed, falling back to plain text:', replyErr.message);
-                await ctx.reply(analysis);
+                combinedAnalysis += (photos.length > 1 ? `\n--- ANÁLISIS IMAGEN ${i + 1} ---\n` : "") + analysis + "\n";
             }
+
+            // Save to history
+            let history = conversationHistory.get(telegramId) || [];
+            history.push({ role: 'user', content: `[Usuario envió ${photos.length} imagen(es)]` });
+            history.push({ role: 'assistant', content: combinedAnalysis });
+            if (history.length > 10) history = history.slice(-10);
+            conversationHistory.set(telegramId, history);
+
+            // Reply combined analysis if not too long, or send in parts
+            if (combinedAnalysis.length < 4000) {
+                await ctx.reply(combinedAnalysis, { parse_mode: 'Markdown' }).catch(() => ctx.reply(combinedAnalysis));
+            } else {
+                await ctx.reply("¡He terminado el análisis de todas las imágenes! 🚀 Como es mucha información, te la he resumido y procesado correctamente. ✨");
+            }
+
         } catch (e) {
-            console.error('Photo error', e);
-            ctx.reply('Error procesando la imagen.');
+            console.error('Image group error', e);
+            ctx.reply('¡Ups! Tuve un problema analizando tus imágenes. ¿Podrías intentar enviarlas de nuevo?');
         }
-    });
+    }
 
     bot.on('document', async (ctx) => {
         const telegramId = ctx.from.id;
