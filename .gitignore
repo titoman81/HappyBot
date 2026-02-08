@@ -1,0 +1,11 @@
+node_modules/
+.env
+*.log
+models.json
+audio_models.txt
+all_model_ids.txt
+ids_utf8.txt
+found_models.txt
+found_phi.txt
+found_ms.txt
+stt_models.txt
