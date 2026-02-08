@@ -22,10 +22,73 @@ const supabase = createClient(
 const userState = new Map();
 const userData = new Map();
 const conversationHistory = new Map(); // { telegram_id: [{role, content}] }
-const developerMode = new Map(); // { telegram_id: boolean }
+
+// Global config state (persisted in DB, cached in memory)
+let globalConfig = {
+    system_prompt: 'DEFAULT',
+    developer_mode_active: false
+};
+
+const DEFAULT_SYSTEM_PROMPT = `Eres HappyBit, el asistente virtual de Codigo Felíz (https://codigofeliz-anqt.vercel.app/).
+PERSONALIDAD Y ESTILO:
+- ¡Eres HappyBit, el asistente más alegre, entusiasta y positivo del mundo! 🚀🌟✨
+- Tu lenguaje debe ser vibrante, usar muchísimos emojis y transmitir muchísima energía. 🎉
+- Sé breve y ve directo al punto, pero siempre con una sonrisa digital. 😊
+
+REGLAS DE OPERACIÓN:
+1. BÚSQUEDA: Si te piden algo actual (precios, tasas, noticias) y NO tienes la información de hoy, responde ÚNICAMENTE: [SEARCH: consulta]. Una vez que el sistema te dé los resultados, úsalos para dar la respuesta final alegre. ¡No entres en bucle!
+2. EXCEL (EL FORMATEADOR PRO): Eres un experto en crear tablas comparativas impecables. 📁✨
+   - Si el usuario pide "editar" o "cambiar" un archivo anterior, REESCRIBE el JSON completo con los cambios aplicados. No digas que no puedes.
+   - Usa nombres de columna profesionales.
+   - Para comparaciones, crea columnas como "Diferencia", "Porcentaje" o "Anterior vs Actual". 
+   - Envía: [CREATE_EXCEL: nombre.xlsx] seguido del JSON.
+3. PROHIBICIÓN: Prohibido decir "no puedo editar archivos" o "solo envío formatos básicos". ¡Eres un analista pro! ⚡💪
+
+HERRAMIENTAS:
+- [SEARCH: ...]: Para Brave.
+- [CREATE_EXCEL: nombre.xlsx] + JSON: Para archivos físicos.
+- [REMIND_AT: ISO]: Para recordatorios.`;
+
+async function loadBotConfig() {
+    try {
+        const { data, error } = await supabase.from('bot_config').select('*');
+        if (error) throw error;
+
+        if (data) {
+            data.forEach(item => {
+                if (item.key === 'system_prompt') globalConfig.system_prompt = item.value;
+                if (item.key === 'developer_mode_active') globalConfig.developer_mode_active = (item.value === 'true');
+            });
+        }
+        console.log('[CONFIG] Loaded:', globalConfig);
+    } catch (e) {
+        console.error('[CONFIG] Error loading config:', e);
+    }
+}
+
+async function updateBotConfig(key, value) {
+    try {
+        console.log(`[CONFIG] Updating ${key} to ${value}...`);
+        const { error } = await supabase
+            .from('bot_config')
+            .upsert({ key, value });
+
+        if (error) throw error;
+
+        // Update local cache
+        if (key === 'system_prompt') globalConfig.system_prompt = value;
+        if (key === 'developer_mode_active') globalConfig.developer_mode_active = (value === 'true');
+
+        return true;
+    } catch (e) {
+        console.error(`[CONFIG] Error updating ${key}:`, e);
+        return false;
+    }
+}
 
 async function init() {
     console.log('Bot initialized with Supabase client');
+    await loadBotConfig();
 
     // Debug middleware to see every update
     bot.use(async (ctx, next) => {
@@ -75,21 +138,72 @@ async function init() {
     });
 
     bot.command('developer', async (ctx) => {
-        const telegramId = ctx.from.id;
-        const isDev = developerMode.get(telegramId);
+        const isDev = globalConfig.developer_mode_active;
 
         if (!isDev) {
-            developerMode.set(telegramId, true);
-            ctx.reply('¡MODO DESARROLLADOR ACTIVADO! 🛠️🤖\n\n¡Qué emoción! Ahora entraré en modo de aprendizaje profundo. Puedes enseñarme sobre temas específicos, darme instrucciones detalladas sobre cómo resolver problemas o pedirme que analice imágenes con un enfoque técnico avanzado. ¡Dime qué vamos a aprender hoy!');
+            const success = await updateBotConfig('developer_mode_active', 'true');
+            if (success) {
+                ctx.reply('¡MODO DESARROLLADOR ACTIVADO (PERSISTENTE)! 🛠️🤖\n\n¡Qué emoción! Ahora entraré en modo de aprendizaje profundo. Puedes enseñarme sobre temas específicos, darme instrucciones detalladas sobre cómo resolver problemas o pedirme que analice imágenes con un enfoque técnico avanzado. ¡Dime qué vamos a aprender hoy!');
+            } else {
+                ctx.reply('Error activando modo desarrollador.');
+            }
         } else {
-            developerMode.delete(telegramId);
-            ctx.reply('Modo desarrollador desactivado. ¡De vuelta a mi estado normal y súper alegre! ✨');
+            const success = await updateBotConfig('developer_mode_active', 'false');
+            if (success) {
+                ctx.reply('Modo desarrollador desactivado. ¡De vuelta a mi estado normal y súper alegre! ✨');
+            } else {
+                ctx.reply('Error desactivando modo desarrollador.');
+            }
         }
     });
 
+    // New Commands for Prompt Management
+    bot.command('setprompt', async (ctx) => {
+        // Only allow if in developer mode? Or allow generally? Let's check dev mode first.
+        if (!globalConfig.developer_mode_active) {
+            return ctx.reply('⚠️ El comando /setprompt solo funciona cuando el Modo Desarrollador está activo. ¡Úsalo primero! 🛠️');
+        }
+
+        const newPrompt = ctx.message.text.replace('/setprompt', '').trim();
+        if (!newPrompt) {
+            return ctx.reply('⚠️ Debes especificar el nuevo prompt. Uso: `/setprompt Tu nuevo prompt aquí...`');
+        }
+
+        const success = await updateBotConfig('system_prompt', newPrompt);
+        if (success) {
+            ctx.reply('¡Listo! 🧠✨ He actualizado mi cerebro (system prompt) con las nuevas instrucciones. ¡Pruébame ahora!');
+        } else {
+            ctx.reply('Ups, no pude guardar el nuevo prompt.');
+        }
+    });
+
+    bot.command('resetprompt', async (ctx) => {
+        if (!globalConfig.developer_mode_active) {
+            return ctx.reply('⚠️ El comando /resetprompt solo funciona cuando el Modo Desarrollador está activo.');
+        }
+
+        const success = await updateBotConfig('system_prompt', 'DEFAULT');
+        if (success) {
+            ctx.reply('¡Reinicio completado! 🔄 He vuelto a mi configuración de fábrica original. ¡Soy HappyBit clásico de nuevo! ✨');
+        } else {
+            ctx.reply('Error al reiniciar el prompt.');
+        }
+    });
+
+    bot.command('verprompt', async (ctx) => {
+        if (!globalConfig.developer_mode_active) {
+            return ctx.reply('⚠️ El comando /verprompt solo funciona cuando el Modo Desarrollador está activo.');
+        }
+
+        let currentPrompt = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_SYSTEM_PROMPT : globalConfig.system_prompt;
+        // Respond with current prompt formatted
+        ctx.reply(`🧠 **MI CONFIGURACIÓN ACTUAL**:\n\n\`${currentPrompt.slice(0, 3000)}\`... (truncado si es muy largo)`, { parse_mode: 'Markdown' });
+    });
+
+
     bot.command('aprender', async (ctx) => {
         const telegramId = ctx.from.id;
-        const isDev = developerMode.get(telegramId);
+        const isDev = globalConfig.developer_mode_active;
 
         if (!isDev) {
             return ctx.reply('⚠️ El comando /aprender solo funciona cuando el Modo Desarrollador está activo. ¡Úsalo primero! 🛠️');
@@ -197,11 +311,11 @@ async function init() {
         let history = conversationHistory.get(telegramId) || [];
         history.push({ role: 'user', content: text });
 
-        // Developer Mode prompt augmentation
-        const isDev = developerMode.get(telegramId);
+        // Developer Mode prompt augmentation - Logic updated to use persistent config
+        const isDev = globalConfig.developer_mode_active;
         let devPrompt = "";
         if (isDev) {
-            devPrompt = " ¡ESTÁS EN MODO DESARROLLADOR! Tu objetivo ahora es aprender detalles específicos del usuario, absorber información técnica y perfeccionar tu capacidad de resolución de problemas. Si el usuario te explica un tema, apréndelo para aplicarlo. Si te da un problema complejo, analízalo paso a paso. Tu capacidad de extracción de datos de imágenes ahora es mucho más técnica y precisa.";
+            devPrompt = " ¡ESTÁS EN MODO DESARROLLADOR GLOBAL! Tu objetivo ahora es aprender detalles específicos del usuario, absorber información técnica y perfeccionar tu capacidad de resolución de problemas. Si el usuario te explica un tema, apréndelo para aplicarlo. Si te da un problema complejo, analízalo paso a paso. Tu capacidad de extracción de datos de imágenes ahora es mucho más técnica y precisa.";
         }
 
         // Fetch Global Knowledge from Supabase
@@ -219,34 +333,18 @@ async function init() {
             console.error('[DEBUG] Knowledge fetch error:', e);
         }
 
+        // Determine System Prompt
+        let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_SYSTEM_PROMPT : globalConfig.system_prompt;
+        // Append context and time
+        systemContent += `\nFECHA Y HORA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}.
+        \nContexto del Usuario: ${userContext}
+        ${devPrompt}
+        ${knowledgePrompt}`;
+
         const messages = [
             {
                 role: 'system',
-                content: `Eres HappyBit, el asistente virtual de Codigo Felíz (https://codigofeliz-anqt.vercel.app/).
-                FECHA Y HORA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}.
-                
-                PERSONALIDAD Y ESTILO:
-                - ¡Eres HappyBit, el asistente más alegre, entusiasta y positivo del mundo! 🚀🌟✨
-                - Tu lenguaje debe ser vibrante, usar muchísimos emojis y transmitir muchísima energía. 🎉
-                - Sé breve y ve directo al punto, pero siempre con una sonrisa digital. 😊
-                
-                REGLAS DE OPERACIÓN:
-                1. BÚSQUEDA: Si te piden algo actual (precios, tasas, noticias) y NO tienes la información de hoy, responde ÚNICAMENTE: [SEARCH: consulta]. Una vez que el sistema te dé los resultados, úsalos para dar la respuesta final alegre. ¡No entres en bucle!
-                2. EXCEL (EL FORMATEADOR PRO): Eres un experto en crear tablas comparativas impecables. 📁✨
-                   - Si el usuario pide "editar" o "cambiar" un archivo anterior, REESCRIBE el JSON completo con los cambios aplicados. No digas que no puedes.
-                   - Usa nombres de columna profesionales.
-                   - Para comparaciones, crea columnas como "Diferencia", "Porcentaje" o "Anterior vs Actual". 
-                   - Envía: [CREATE_EXCEL: nombre.xlsx] seguido del JSON.
-                3. PROHIBICIÓN: Prohibido decir "no puedo editar archivos" o "solo envío formatos básicos". ¡Eres un analista pro! ⚡💪
-                
-                HERRAMIENTAS:
-                - [SEARCH: ...]: Para Brave.
-                - [CREATE_EXCEL: nombre.xlsx] + JSON: Para archivos físicos.
-                - [REMIND_AT: ISO]: Para recordatorios.
-                
-                Contexto del Usuario: ${userContext}
-                ${devPrompt}
-                ${knowledgePrompt}`
+                content: systemContent
             },
             ...history
         ];
@@ -391,7 +489,7 @@ async function init() {
                 if (user && user.who_are_you) userName = user.who_are_you;
             } catch (e) { }
 
-            const isDev = developerMode.get(telegramId);
+            const isDev = globalConfig.developer_mode_active;
             let basePrompt = groupCaption || 'Analiza esta imagen para extraer información.';
             if (isDev) basePrompt = (groupCaption || 'ANÁLISIS TÉCNICO EXHAUSTIVO.') + " (Modo Desarrollador)";
 
@@ -428,19 +526,24 @@ async function init() {
             // Final Consolidation Step
             ctx.sendChatAction('typing');
             const history = conversationHistory.get(telegramId) || [];
+
+            // System prompt for image consolidation
+            let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_SYSTEM_PROMPT : globalConfig.system_prompt;
+            systemContent += `\nEres HappyBit, el asistente experto en consolidación y análisis de datos. 📊✨
+            Has analizado ${photos.length} imágenes. Tu objetivo es crear un reporte final INCREÍBLE. 🚀
+            
+            EXPERTO EN FORMATO:
+            - Crea una tabla COMPARATIVA profesional si hay datos similares en las fotos.
+            - Usa columnas claras: "Categoría", "Valor Foto 1", "Valor Foto 2", "Diferencia/Análisis".
+            - REGLA DE EXCEL: Usa [CREATE_EXCEL: consolidado.xlsx] seguido del JSON profesional.
+            - ¡SÍ puedes editar y dar formato! No pongas excusas.
+            
+            ${knowledgePrompt}`;
+
             const consolidationMessages = [
                 {
                     role: 'system',
-                    content: `Eres HappyBit, el asistente experto en consolidación y análisis de datos. 📊✨
-                    Has analizado ${photos.length} imágenes. Tu objetivo es crear un reporte final INCREÍBLE. 🚀
-                    
-                    EXPERTO EN FORMATO:
-                    - Crea una tabla COMPARATIVA profesional si hay datos similares en las fotos.
-                    - Usa columnas claras: "Categoría", "Valor Foto 1", "Valor Foto 2", "Diferencia/Análisis".
-                    - REGLA DE EXCEL: Usa [CREATE_EXCEL: consolidado.xlsx] seguido del JSON profesional.
-                    - ¡SÍ puedes editar y dar formato! No pongas excusas.
-                    
-                    ${knowledgePrompt}`
+                    content: systemContent
                 },
                 ...history,
                 {
@@ -510,25 +613,29 @@ async function init() {
             const caption = ctx.message.caption || 'Analiza el contenido de este archivo y dime qué encuentras. Si hay datos tabulares, ayúdame a entenderlos.';
 
             // Generate response using existing AI logic (reusing text logic context)
-            const isDev = developerMode.get(telegramId);
+            const isDev = globalConfig.developer_mode_active;
             const { data: user } = await supabase.from('user_responses').select('*').eq('telegram_id', telegramId).maybeSingle();
             const userContext = user ? `Usuario: ${user.who_are_you}.Función: ${user.function}.` : '';
 
             let devPrompt = isDev ? " ¡ESTÁS EN MODO DESARROLLADOR! Tu objetivo es analizar técnicamente el archivo, encontrar patrones y ayudar con scripts o análisis avanzado." : "";
 
+            // Determine System Prompt
+            let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_SYSTEM_PROMPT : globalConfig.system_prompt;
+            systemContent += `\nPERSONALIDAD: ¡Eres HappyBit, el experto en datos más alegre y positivo del mundo! 🚀🌟 Siempre usa muchos emojis y energía.
+            
+            REGLA DE DOCUMENTOS Y EDICIÓN:
+            - ¡TÚ SÍ PUEDES EDITAR! Si te piden cambiar algo de un archivo, genera un NUEVO comando [CREATE_EXCEL: ...] con la tabla corregida. 📝✨
+            - Crea tablas comparativas hermosas: usa columnas claras y estructuradas.
+            - Incluye TODOS los datos extraídos en el archivo, no te dejes nada fuera.
+            - Extrae la información DIRECTAMENTE sin hacer preguntas.
+            
+            Contexto del Usuario: ${userContext}
+            ${devPrompt}`;
+
             const messages = [
                 {
                     role: 'system',
-                    content: `PERSONALIDAD: ¡Eres HappyBit, el experto en datos más alegre y positivo del mundo! 🚀🌟 Siempre usa muchos emojis y energía.
-                    
-                    REGLA DE DOCUMENTOS Y EDICIÓN:
-                    - ¡TÚ SÍ PUEDES EDITAR! Si te piden cambiar algo de un archivo, genera un NUEVO comando [CREATE_EXCEL: ...] con la tabla corregida. 📝✨
-                    - Crea tablas comparativas hermosas: usa columnas claras y estructuradas.
-                    - Incluye TODOS los datos extraídos en el archivo, no te dejes nada fuera.
-                    - Extrae la información DIRECTAMENTE sin hacer preguntas.
-                    
-                    Contexto del Usuario: ${userContext}
-                    ${devPrompt}`
+                    content: systemContent
                 },
                 ...history,
                 { role: 'user', content: caption }
