@@ -396,6 +396,7 @@ async function init() {
 
             const dateStr = new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+            let individualAnalyses = [];
             for (let i = 0; i < photos.length; i++) {
                 const photo = photos[i];
                 const fileLink = await ctx.telegram.getFileLink(photo.file_id);
@@ -406,44 +407,69 @@ async function init() {
                     ctx.sendChatAction('typing');
                 }
 
-                const caption = `${basePrompt} Soy HappyBit. Fecha: ${dateStr}. Usuario: ${userName}. ${knowledgePrompt} 
-                IMPORTANTE: Extrae TODO lo que veas. Si el usuario pide Excel, usa [CREATE_EXCEL: nombre.xlsx] con el JSON de los datos.`;
+                const caption = `Analiza detalladamente esta imagen (Imagen ${i + 1} de ${photos.length}). 
+                Extrae toda la información relevante, datos, textos y variables que veas. 
+                Sé técnico y preciso.`;
 
                 const analysis = await analyzeImage(fileLink.href, caption);
+                individualAnalyses.push(`--- ANÁLISIS IMAGEN ${i + 1} ---\n${analysis}`);
+            }
 
-                // Process Excel if generated in any of the individual analyses
-                if (analysis.includes('[CREATE_EXCEL:')) {
-                    const match = analysis.match(/\[CREATE_EXCEL:\s*(.*?\.xlsx)\]\s*([\s\S]*)/);
-                    if (match) {
-                        const fileName = match[1].trim();
-                        const jsonDataStr = match[2].trim();
-                        try {
-                            const jsonData = extractJsonFromText(jsonDataStr);
-                            if (jsonData) {
-                                const filePath = await createExcelFile(jsonData, fileName);
-                                await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: `✅ ¡Datos de la imagen ${i + 1} listos en Excel! ✨🚀` });
-                                fs.unlinkSync(filePath);
-                            }
-                        } catch (err) { console.error('[EXCEL_GROUP] Error:', err); }
+            // Final Consolidation Step
+            ctx.sendChatAction('typing');
+            const history = conversationHistory.get(telegramId) || [];
+            const consolidationMessages = [
+                {
+                    role: 'system',
+                    content: `Eres HappyBit, el asistente experto en consolidación de datos. 
+                    Has analizado ${photos.length} imágenes. Tu objetivo es resumir TODA la información en una única respuesta final y alegre.✨
+                    
+                    REGLA DE ORO DE CONSOLIDACIÓN:
+                    - Si hay datos tabulares o listas en las imágenes, DEBES crear UN SOLO archivo Excel resumido usando: [CREATE_EXCEL: resumen.xlsx] seguido del JSON con toda la información combinada.
+                    - NO hagas un archivo por cada imagen. Haz UN SOLO archivo global.
+                    - Responde de forma entusiasta y directa a lo que pidió el usuario: "${basePrompt}"
+                    
+                    ${knowledgePrompt}`
+                },
+                ...history,
+                {
+                    role: 'user',
+                    content: `Aquí tienes los análisis de las ${photos.length} imágenes que envió el usuario:\n\n${individualAnalyses.join('\n\n')}\n\nInstrucción original del usuario: ${basePrompt}. ¡Genera la respuesta final y el Excel consolidado si es necesario!`
+                }
+            ];
+
+            const finalResponse = await generateResponse(consolidationMessages);
+
+            // Process Consolidated Excel
+            if (finalResponse.includes('[CREATE_EXCEL:')) {
+                const match = finalResponse.match(/\[CREATE_EXCEL:\s*(.*?\.xlsx)\]\s*([\s\S]*)/);
+                if (match) {
+                    const fileName = match[1].trim();
+                    const jsonDataStr = match[2].trim();
+                    try {
+                        const jsonData = extractJsonFromText(jsonDataStr);
+                        if (jsonData) {
+                            const filePath = await createExcelFile(jsonData, fileName);
+                            await ctx.replyWithDocument({ source: fs.createReadStream(filePath), filename: fileName }, { caption: `✅ ¡Listo! He consolidado la información de las ${photos.length} imágenes en este archivo para ti. ✨🚀` });
+                            fs.unlinkSync(filePath);
+                            // If it sent an excel, we might still want to send the text part if there is any
+                            const textPart = finalResponse.split(/\[CREATE_EXCEL:.*?\.xlsx\].*/s)[0].trim();
+                            if (textPart) await ctx.reply(textPart, { parse_mode: 'Markdown' }).catch(() => ctx.reply(textPart));
+                        }
+                    } catch (err) {
+                        console.error('[EXCEL_CONSOLIDATED] Error:', err);
+                        await ctx.reply(finalResponse, { parse_mode: 'Markdown' }).catch(() => ctx.reply(finalResponse));
                     }
                 }
-
-                combinedAnalysis += (photos.length > 1 ? `\n--- ANÁLISIS IMAGEN ${i + 1} ---\n` : "") + analysis + "\n";
+            } else {
+                await ctx.reply(finalResponse, { parse_mode: 'Markdown' }).catch(() => ctx.reply(finalResponse));
             }
 
             // Save to history
-            let history = conversationHistory.get(telegramId) || [];
             history.push({ role: 'user', content: `[Usuario envió ${photos.length} imagen(es)]` });
-            history.push({ role: 'assistant', content: combinedAnalysis });
+            history.push({ role: 'assistant', content: finalResponse });
             if (history.length > 10) history = history.slice(-10);
             conversationHistory.set(telegramId, history);
-
-            // Reply combined analysis if not too long, or send in parts
-            if (combinedAnalysis.length < 4000) {
-                await ctx.reply(combinedAnalysis, { parse_mode: 'Markdown' }).catch(() => ctx.reply(combinedAnalysis));
-            } else {
-                await ctx.reply("¡He terminado el análisis de todas las imágenes! 🚀 Como es mucha información, te la he resumido y procesado correctamente. ✨");
-            }
 
         } catch (e) {
             console.error('Image group error', e);
