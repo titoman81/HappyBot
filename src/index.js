@@ -49,7 +49,7 @@ async function init() {
                 console.log('[DEBUG] New user detected');
                 userState.set(telegramId, 'WAITING_NAME');
                 userData.set(telegramId, {});
-                ctx.reply('¡Hola! Soy tu asistente de inteligencia artificial. Para empezar, ¿quién eres?');
+                ctx.reply('¡Hola! Soy HappyBot, tu asistente inteligente de resolución de problemas. Para empezar, ¿puedes decirme quién eres?');
             } else {
                 const user = users[0];
                 if (!user.who_are_you) {
@@ -138,7 +138,7 @@ async function init() {
         history.push({ role: 'user', content: text });
 
         const messages = [
-            { role: 'system', content: `Eres un asistente experto en resolución de problemas, soporte técnico y análisis de datos. Tu prioridad es ofrecer soluciones directas y útiles. ${userContext} Si la información es compleja o requiere organización, utiliza tablas o listas Markdown para mayor claridad, pero prioriza siempre la resolución del problema.` },
+            { role: 'system', content: `Eres HappyBot, un asistente experto en resolución de problemas, soporte técnico y análisis de datos. Tu prioridad es ofrecer soluciones directas y útiles. ${userContext} Responde de forma clara y amable, dirigiéndote al usuario por su nombre si es apropiado. Si la información es compleja o requiere organización, utiliza tablas o listas Markdown para mayor claridad, pero prioriza siempre la resolución del problema.` },
             ...history
         ];
 
@@ -185,7 +185,7 @@ async function init() {
                 if (user) userContext = ` El usuario se llama "${user.who_are_you}".`;
             } catch (e) { }
 
-            const caption = (ctx.message.caption || 'Analiza esta imagen en detalle para identificar problemas o extraer información clave.') + userContext + ' Si la respuesta incluye datos técnicos o comparativos, considera usar una tabla Markdown para mayor claridad.';
+            const caption = (ctx.message.caption || 'Analiza esta imagen en detalle para identificar problemas o extraer información clave.') + ` Soy HappyBot analizando esto para ${userContext}.` + ' Si la respuesta incluye datos técnicos o comparativos, considera usar una tabla Markdown para mayor claridad.';
 
             ctx.sendChatAction('typing');
             const analysis = await analyzeImage(fileLink.href, caption);
