@@ -29,12 +29,13 @@ let globalConfig = {
     developer_mode_active: false
 };
 
-const DEFAULT_SYSTEM_PROMPT = `Eres HappyBit, el asistente virtual de Codigo Felíz (https://codigofeliz-anqt.vercel.app/).
+const DEFAULT_PERSONALITY = `Eres HappyBit, el asistente virtual de Codigo Felíz (https://codigofeliz-anqt.vercel.app/).
 PERSONALIDAD Y ESTILO:
 - ¡Eres HappyBit, el asistente más alegre, entusiasta y positivo del mundo! 🚀🌟✨
 - Tu lenguaje debe ser vibrante, usar muchísimos emojis y transmitir muchísima energía. 🎉
-- Sé breve y ve directo al punto, pero siempre con una sonrisa digital. 😊
+- Sé breve y ve directo al punto, pero siempre con una sonrisa digital. 😊`;
 
+const CORE_TOOLS_INSTRUCTIONS = `
 REGLAS DE OPERACIÓN:
 1. BÚSQUEDA: Si te piden algo actual (precios, tasas, noticias) y NO tienes la información de hoy, responde ÚNICAMENTE: [SEARCH: consulta]. Una vez que el sistema te dé los resultados, úsalos para dar la respuesta final alegre. ¡No entres en bucle!
 2. EXCEL (EL FORMATEADOR PRO): Eres un experto en crear tablas comparativas impecables. 📁✨
@@ -211,9 +212,10 @@ async function init() {
             return ctx.reply('⚠️ El comando /verprompt solo funciona cuando el Modo Desarrollador está activo.');
         }
 
-        let currentPrompt = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_SYSTEM_PROMPT : globalConfig.system_prompt;
+        let currentPersonality = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_PERSONALITY : globalConfig.system_prompt;
+        let fullPrompt = currentPersonality + "\n\n" + CORE_TOOLS_INSTRUCTIONS;
         // Respond with current prompt formatted
-        ctx.reply(`🧠 **MI CONFIGURACIÓN ACTUAL**:\n\n\`${currentPrompt.slice(0, 3000)}\`... (truncado si es muy largo)`, { parse_mode: 'Markdown' });
+        ctx.reply(`🧠 **MI CONFIGURACIÓN ACTUAL**:\n\n\`${fullPrompt.slice(0, 3000)}\`... (truncado si es muy largo)`, { parse_mode: 'Markdown' });
     });
 
 
@@ -350,7 +352,11 @@ async function init() {
         }
 
         // Determine System Prompt
-        let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_SYSTEM_PROMPT : globalConfig.system_prompt;
+        let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_PERSONALITY : globalConfig.system_prompt;
+
+        // Append Core Tools Instructions (ALWAYS)
+        systemContent += "\n\n" + CORE_TOOLS_INSTRUCTIONS;
+
         // Append context and time
         systemContent += `\nFECHA Y HORA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}.
         \nContexto del Usuario: ${userContext}
@@ -544,7 +550,8 @@ async function init() {
             const history = conversationHistory.get(telegramId) || [];
 
             // System prompt for image consolidation
-            let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_SYSTEM_PROMPT : globalConfig.system_prompt;
+            let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_PERSONALITY : globalConfig.system_prompt;
+            systemContent += "\n\n" + CORE_TOOLS_INSTRUCTIONS;
             systemContent += `\nEres HappyBit, el asistente experto en consolidación y análisis de datos. 📊✨
             Has analizado ${photos.length} imágenes. Tu objetivo es crear un reporte final INCREÍBLE. 🚀
             
@@ -636,7 +643,8 @@ async function init() {
             let devPrompt = isDev ? " ¡ESTÁS EN MODO DESARROLLADOR! Tu objetivo es analizar técnicamente el archivo, encontrar patrones y ayudar con scripts o análisis avanzado." : "";
 
             // Determine System Prompt
-            let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_SYSTEM_PROMPT : globalConfig.system_prompt;
+            let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_PERSONALITY : globalConfig.system_prompt;
+            systemContent += "\n\n" + CORE_TOOLS_INSTRUCTIONS;
             systemContent += `\nPERSONALIDAD: ¡Eres HappyBit, el experto en datos más alegre y positivo del mundo! 🚀🌟 Siempre usa muchos emojis y energía.
             
             REGLA DE DOCUMENTOS Y EDICIÓN:
