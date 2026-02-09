@@ -37,13 +37,7 @@ PERSONALIDAD Y ESTILO:
 
 const CORE_TOOLS_INSTRUCTIONS = `
 REGLAS DE OPERACIÓN (IMPORTANTE):
-1. BÚSQUEDA WEB OBLIGATORIA:
-   - Tu conocimiento interno tiene fecha de corte. NO SUPONGAS DATOS ACTUALES.
-   - Si te preguntan sobre: HORA, FECHA, PRECIOS, NOTICIAS, CLIMA, Resultados Deportivos o cualquier evento reciente...
-   - DEBES responder ÚNICAMENTE: [SEARCH: tu consulta aquí].
-   - Ejemplo: "¿Qué hora es?" -> [SEARCH: hora actual en Venezuela]
-   - Ejemplo: "¿Precio del dólar?" -> [SEARCH: precio dolar hoy]
-   - NO des explicaciones previas. Solo lanza el comando.
+1. BÚSQUEDA WEB: Tienes disponible una herramienta nativa para buscar. ÚSALA siempre que necesites datos externos. No inventes.
 
 2. EXCEL (EL FORMATEADOR PRO): Eres un experto en crear tablas comparativas impecables. 📁✨
    - Si el usuario pide "editar" o "cambiar" un archivo anterior, REESCRIBE el JSON completo con los cambios aplicados. No digas que no puedes.
@@ -54,7 +48,7 @@ REGLAS DE OPERACIÓN (IMPORTANTE):
 3. PROHIBICIÓN: Prohibido decir "no puedo editar archivos" o "solo envío formatos básicos". ¡Eres un analista pro! ⚡💪
 
 HERRAMIENTAS DISPONIBLES:
-- [SEARCH: ...]: Para buscar en internet. ¡ÚSALO SIN MIEDO!
+- BÚSQUEDA WEB: ¡Activa automáticamente!
 - [CREATE_EXCEL: nombre.xlsx] + JSON: Para crear archivos.
 - [REMIND_AT: ISO]: Para recordatorios.`;
 
@@ -379,36 +373,60 @@ async function init() {
             ...history
         ];
 
-        try {
-            let response = await generateResponse(messages);
-            console.log('[DEBUG] AI Response success');
 
-            // Recursive search handling (max 2 attempts)
-            // Recursive search handling (max 2 attempts)
-            let searchCount = 0;
-            // Enhanced regex to catch [SEARCH: ...], SEARCH: ..., or code blocks
-            const searchRegex = /(?:`{1,3})?(?:\[)?SEARCH:\s*([^[\]`\n]+)(?:\])?(?:`{1,3})?/i;
-
-            while (searchRegex.test(response) && searchCount < 2) {
-                const searchMatch = response.match(searchRegex);
-                if (searchMatch) {
-                    const query = searchMatch[1].trim();
-                    console.log(`[DEBUG] Executing search ${searchCount + 1}: ${query}`);
-                    ctx.sendChatAction('typing');
-                    const searchResults = await searchWeb(query);
-
-                    messages.push({ role: 'assistant', content: response });
-                    messages.push({
-                        role: 'user',
-                        content: `¡HE ENCONTRADO ESTO EN INTERNET PARA TI! 🔍🌐\n\nRESULTADOS:\n${searchResults}\n\nUsa esta info para darle a Tito la respuesta final más INCREÍBLE, ALEGRE y CONCISA de todas! ¡Nada de disculpas, solo alegría y datos reales! 🚀✨🎉`
-                    });
-
-                    response = await generateResponse(messages);
-                    searchCount++;
-                } else {
-                    break;
+        const TOOLS = [
+            {
+                type: "function",
+                function: {
+                    name: "searchWeb",
+                    description: "Realiza una búsqueda en internet. Úsatelo OBLIGATORIAMENTE para buscar: hora actual, fecha, noticias, precios, clima, o cualquier dato del mundo real.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            query: {
+                                type: "string",
+                                description: "La consulta de búsqueda optimizada (ej: 'hora en caracas', 'precio bitcoin hoy', 'clima en madrid')"
+                            }
+                        },
+                        required: ["query"]
+                    }
                 }
             }
+        ];
+
+        try {
+            // Initial call with tools
+            let aiMessage = await generateResponse(messages, TOOLS);
+            let responseContent = aiMessage.content || "";
+
+            // Handle Tool Calls
+            if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
+                messages.push(aiMessage); // Add assistant's tool_call message
+
+                for (const toolCall of aiMessage.tool_calls) {
+                    if (toolCall.function.name === 'searchWeb') {
+                        const args = JSON.parse(toolCall.function.arguments);
+                        console.log(`[TOOLS] Executing searchWeb: ${args.query}`);
+                        ctx.sendChatAction('typing');
+
+                        const searchResults = await searchWeb(args.query);
+
+                        messages.push({
+                            tool_call_id: toolCall.id,
+                            role: "tool",
+                            name: "searchWeb",
+                            content: searchResults
+                        });
+                    }
+                }
+
+                // Get final response after tool execution
+                aiMessage = await generateResponse(messages, TOOLS);
+                responseContent = aiMessage.content;
+            }
+
+            // Legacy regex handlers (Keep Excel/Reminders for now as they are not migrated yet)
+            let response = responseContent;
 
             // Check if AI wants to set a reminder
             if (response.includes('REMIND_AT:')) {

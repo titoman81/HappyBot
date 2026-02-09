@@ -11,18 +11,21 @@ const client = new OpenAI({
     timeout: 30000, // 30 seconds
 });
 
-async function generateResponse(messages) {
+async function generateResponse(messages, tools = null) {
     try {
         console.log(`[DEBUG] AI Request: ${JSON.stringify(messages).slice(0, 50)}...`);
-        const completion = await client.chat.completions.create({
+        const body = {
             model: process.env.NVIDIA_MODEL,
             messages: messages,
             temperature: 0.5,
             top_p: 1,
             max_tokens: 1024,
-        });
+        };
+        if (tools) body.tools = tools;
+
+        const completion = await client.chat.completions.create(body);
         console.log('[DEBUG] AI Response received');
-        return completion.choices[0].message.content;
+        return completion.choices[0].message;
     } catch (error) {
         console.error('[DEBUG] AI Error:', error.status, error.message);
         return 'Lo siento, tuve un problema procesando tu solicitud.';
