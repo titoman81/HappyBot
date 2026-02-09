@@ -1,0 +1,4 @@
+openai-whisper
+ffmpeg-python
+# Note: whisper requires torch; on many Linux images installing 'torch' via pip is heavy.
+# For Railway/Docker builds we install minimal CPU wheels in the Dockerfile where possible.
