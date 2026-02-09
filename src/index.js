@@ -60,7 +60,7 @@ async function loadBotConfig() {
                 if (item.key === 'developer_mode_active') globalConfig.developer_mode_active = (item.value === 'true');
             });
         }
-        console.log('[CONFIG] Loaded:', globalConfig);
+        // console.log('[CONFIG] Loaded:', globalConfig);
     } catch (e) {
         console.error('[CONFIG] Error loading config:', e);
     }
@@ -89,6 +89,10 @@ async function updateBotConfig(key, value) {
 async function init() {
     console.log('Bot initialized with Supabase client');
     await loadBotConfig();
+    // Poll config every 10 seconds to ensure global sync
+    setInterval(async () => {
+        await loadBotConfig();
+    }, 10000);
 
     // Debug middleware to see every update
     bot.use(async (ctx, next) => {
