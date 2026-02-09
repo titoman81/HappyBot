@@ -362,75 +362,165 @@ async function init() {
             console.error('[DEBUG] Knowledge fetch error:', e);
         }
 
-        // Determine System Prompt
-        let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_PERSONALITY : globalConfig.system_prompt;
-
-        // Append Core Tools Instructions (ALWAYS)
-        systemContent += "\n\n" + CORE_TOOLS_INSTRUCTIONS;
-
-        // Append context and time
-        systemContent += `\nFECHA Y HORA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}.
-        \nContexto del Usuario: ${userContext}
-        ${devPrompt}
-        ${knowledgePrompt}`;
-
-        const messages = [
-            {
-                role: 'system',
-                content: systemContent
-            },
-            ...history
-        ];
-
-
         const TOOLS = [
             {
                 type: "function",
                 function: {
                     name: "searchWeb",
-                    description: "Realiza una búsqueda en internet. Úsalo OBLIGATORIAMENTE para buscar: hora actual, fecha, noticias, precios, clima. PARA LA HORA: Verifica si el resultado es UTC y conviértelo a la hora local del país (ej: Venezuela UTC-4).",
+                    description: "Realiza una búsqueda en internet para obtener datos variados (noticias, clima, precios, definiciones).",
                     parameters: {
                         type: "object",
                         properties: {
                             query: {
                                 type: "string",
-                                description: "La consulta de búsqueda optimizada (ej: 'hora en caracas', 'precio bitcoin hoy', 'clima en madrid')"
+                                description: "La consulta de búsqueda optimizada."
                             }
                         },
                         required: ["query"]
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "getGlobalTime",
+                    description: "Obtiene la hora y fecha EXACTA de una ubicación usando una API de tiempo confiable. Úsalo SIEMPRE para preguntas de 'qué hora es', 'fecha de hoy', 'hora en [país]'.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            location: {
+                                type: "string",
+                                description: "El lugar del que se quiere saber la hora (ej: 'Venezuela', 'Madrid', 'Buenos Aires', 'Tokyo')."
+                            }
+                        },
+                        required: ["location"]
                     }
                 }
             }
         ];
 
         try {
-            // Initial call with tools
-            let aiMessage = await generateResponse(messages, TOOLS);
+            // System Prompt Construction - IMPROVED FOR PERSONALITY
+            let systemContent = globalConfig.system_prompt === 'DEFAULT' ? DEFAULT_PERSONALITY : globalConfig.system_prompt;
+
+            // Append Guidelines (Softened)
+            systemContent += `\n\nGUÍA DE HERRAMIENTAS:
+1. TIEMPO: Usa 'getGlobalTime' para la hora exacta. Es infalible.
+2. INFO GENERAL: Usa 'searchWeb' para todo lo demás.
+3. EXCEL: Si piden tablas, usa 'CREATE_EXCEL'.
+
+¡IMPORTANTE!: Una vez obtengas los datos de las herramientas, TU PERSONALIDAD DEBE BRILLAR. ✨
+No seas robótico. Usa la información para dar una respuesta al estilo HappyBit (o el estilo definido por el usuario). ¡Sé creativo, divertido y útil! 🚀`;
+
+            // Append context...
+            systemContent += `\nFECHA REFERENCIAL S.O.: ${new Date().toLocaleString()}\nContexto: ${userContext}\n${devPrompt}\n${knowledgePrompt}`;
+
+            // Re-inject messages with allowed tools
+            const messagesWithTools = [
+                { role: 'system', content: systemContent },
+                ...history
+            ];
+
+            // Call AI
+            let aiMessage = await generateResponse(messagesWithTools, TOOLS);
             let responseContent = aiMessage.content || "";
 
-            // Handle Tool Calls
+            // Handle Tools
             if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
-                messages.push(aiMessage); // Add assistant's tool_call message
+                messagesWithTools.push(aiMessage); // Add assistant's tool request
 
                 for (const toolCall of aiMessage.tool_calls) {
                     if (toolCall.function.name === 'searchWeb') {
                         const args = JSON.parse(toolCall.function.arguments);
                         console.log(`[TOOLS] Executing searchWeb: ${args.query}`);
                         ctx.sendChatAction('typing');
-
                         const searchResults = await searchWeb(args.query);
-
-                        messages.push({
+                        messagesWithTools.push({
                             tool_call_id: toolCall.id,
                             role: "tool",
                             name: "searchWeb",
                             content: searchResults
                         });
                     }
+                    else if (toolCall.function.name === 'getGlobalTime') {
+                        const args = JSON.parse(toolCall.function.arguments);
+                        console.log(`[TOOLS] Executing getGlobalTime: ${args.location}`);
+                        ctx.sendChatAction('typing');
+
+                        // Quick implementation of Time API call
+                        let timeResult = "No pude obtener la hora.";
+                        try {
+                            // Isolate logic or require axios? We need axios.
+                            // Assuming axios is required at top.
+                            // Map common locations to Timezones if possible, or search for timezone first?
+                            // TimeApi.io needs coordinates or timezone string.
+                            // Let's use a smarter search-first approach or a mapping?
+                            // Actually, the simplest is searchWeb('timezone of [location]') -> parse -> get time?
+                            // OR use 'searchWeb' to find the timeapi endpoint?
+                            // Let's use 'searchWeb' to find the CURRENT TIME directly from a reliable string if the API is too complex to implement fully here without a library.
+                            // WAIT. The previous test 'test_time_api.js' worked perfectly with 'America/Caracas'.
+                            // I need a way to map 'Venezuela' -> 'America/Caracas'.
+                            // I will use searchWeb to get the "Timezone String" first if I don't know it, or just use searchWeb for others.
+                            // Or better: Use `searchWeb` to find the timezone string, then call the API.
+                            // actually, `searchWeb` for "current time in [location] timeapi" might yield the json?
+                            // Let's stick to the reliable 'searchWeb' BUT looking for 'timeapi.io' or just using `searchWeb("time in " + location)`?
+                            // The user HATED the search result "06:43AM".
+                            // The reliable way is: `searchWeb` -> "current time [location]" -> Extract Date/Time.
+                            // But I suspect `timeapi.io` has a search? No.
+
+                            // Let's try to map generic locations to timezones via a small dictionary, 
+                            // and for others use Brave Search but asking specifically for the date string.
+
+                            const timezones = {
+                                'venezuela': 'America/Caracas',
+                                'caracas': 'America/Caracas',
+                                'argentina': 'America/Argentina/Buenos_Aires',
+                                'buenos aires': 'America/Argentina/Buenos_Aires',
+                                'chile': 'America/Santiago',
+                                'santiago': 'America/Santiago',
+                                'colombia': 'America/Bogota',
+                                'bogota': 'America/Bogota',
+                                'españa': 'Europe/Madrid',
+                                'madrid': 'Europe/Madrid',
+                                'mexico': 'America/Mexico_City',
+                                'cdmx': 'America/Mexico_City',
+                                'peru': 'America/Lima',
+                                'lima': 'America/Lima',
+                                'miami': 'America/New_York',
+                                'new york': 'America/New_York'
+                            };
+                            const locLower = args.location.toLowerCase();
+                            let tz = null;
+                            for (const [key, val] of Object.entries(timezones)) {
+                                if (locLower.includes(key)) tz = val;
+                            }
+
+                            if (tz) {
+                                const axios = require('axios'); // Ensure axios is available
+                                const resp = await axios.get(`https://timeapi.io/api/Time/current/zone?timeZone=${tz}`);
+                                timeResult = `Hora Exacta (API): ${resp.data.time} - Fecha: ${resp.data.date} - Zona: ${tz}`;
+                            } else {
+                                // Fallback: Use search but specifically ask for time.is
+                                const searchRes = await searchWeb(`current time in ${args.location} timeanddate.com`);
+                                timeResult = `Resultados de búsqueda de hora: ${searchRes}`;
+                            }
+
+                        } catch (e) {
+                            console.error('Time API error', e);
+                            timeResult = "Error consultando la API de tiempo.";
+                        }
+
+                        messagesWithTools.push({
+                            tool_call_id: toolCall.id,
+                            role: "tool",
+                            name: "getGlobalTime",
+                            content: timeResult
+                        });
+                    }
                 }
 
-                // Get final response after tool execution
-                aiMessage = await generateResponse(messages, TOOLS);
+                // Final Generation
+                aiMessage = await generateResponse(messagesWithTools, TOOLS);
                 responseContent = aiMessage.content;
             }
 
