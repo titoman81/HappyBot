@@ -39,7 +39,16 @@ const CORE_TOOLS_INSTRUCTIONS = `
 REGLAS DE OPERACIÓN (IMPORTANTE):
 1. BÚSQUEDA WEB: Tienes disponible una herramienta nativa para buscar. ÚSALA siempre que necesites datos externos. No inventes.
 
-2. EXCEL (EL FORMATEADOR PRO): Eres un experto en crear tablas comparativas impecables. 📁✨
+2. HORA Y FECHA (CRÍTICO):
+   - Los resultados de búsqueda suelen estar en UTC (Tiempo Universal).
+   - DEBES convertir la hora a la zona local del usuario.
+   - Venezuela/Bolivia/Chile/ET = UTC-4 (aprox).
+   - España = UTC+1/UTC+2.
+   - Argentina/Uruguay = UTC-3.
+   - SIEMPRE verifica si el resultado dice "UTC" y ajusta la hora antes de responder.
+   - Si no estás seguro, busca: "Hora actual en [País]" y confía en el resultado que diga "Hora local".
+
+3. EXCEL (EL FORMATEADOR PRO): Eres un experto en crear tablas comparativas impecables. 📁✨
    - Si el usuario pide "editar" o "cambiar" un archivo anterior, REESCRIBE el JSON completo con los cambios aplicados. No digas que no puedes.
    - Usa nombres de columna profesionales.
    - Para comparaciones, crea columnas como "Diferencia", "Porcentaje" o "Anterior vs Actual". 
@@ -379,7 +388,7 @@ async function init() {
                 type: "function",
                 function: {
                     name: "searchWeb",
-                    description: "Realiza una búsqueda en internet. Úsatelo OBLIGATORIAMENTE para buscar: hora actual, fecha, noticias, precios, clima, o cualquier dato del mundo real.",
+                    description: "Realiza una búsqueda en internet. Úsalo OBLIGATORIAMENTE para buscar: hora actual, fecha, noticias, precios, clima. PARA LA HORA: Verifica si el resultado es UTC y conviértelo a la hora local del país (ej: Venezuela UTC-4).",
                     parameters: {
                         type: "object",
                         properties: {
