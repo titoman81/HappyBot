@@ -54,13 +54,25 @@ async function loadBotConfig() {
         const { data, error } = await supabase.from('bot_config').select('*');
         if (error) throw error;
 
+        let hasChanges = false;
         if (data) {
             data.forEach(item => {
-                if (item.key === 'system_prompt') globalConfig.system_prompt = item.value;
-                if (item.key === 'developer_mode_active') globalConfig.developer_mode_active = (item.value === 'true');
+                if (item.key === 'system_prompt' && globalConfig.system_prompt !== item.value) {
+                    globalConfig.system_prompt = item.value;
+                    hasChanges = true;
+                }
+                if (item.key === 'developer_mode_active') {
+                    const newVal = (item.value === 'true');
+                    if (globalConfig.developer_mode_active !== newVal) {
+                        globalConfig.developer_mode_active = newVal;
+                        hasChanges = true;
+                    }
+                }
             });
         }
-        // console.log('[CONFIG] Loaded:', globalConfig);
+        if (hasChanges) {
+            console.log(`[CONFIG ${new Date().toISOString()}] Updated:`, globalConfig);
+        }
     } catch (e) {
         console.error('[CONFIG] Error loading config:', e);
     }
