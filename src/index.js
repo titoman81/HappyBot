@@ -267,11 +267,16 @@ async function init() {
     async function runAgent(ctx, messages, tools, depth = 0) {
         if (depth >= 5) {
             console.log('[AGENT] Max recursion depth reached.');
-            return messages[messages.length - 1].content; // Return last known content
+            return messages[messages.length - 1].content || "Lo siento, me he quedado sin ideas. 🌀";
         }
 
         try {
             const aiMessage = await generateResponse(messages, tools);
+
+            // FIX: Handle string errors from generateResponse
+            if (typeof aiMessage === 'string') {
+                return aiMessage;
+            }
 
             // If it's a pure text response, return it
             if (!aiMessage.tool_calls || aiMessage.tool_calls.length === 0) {
