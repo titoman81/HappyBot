@@ -287,60 +287,83 @@ async function init() {
             messages.push(aiMessage); // Add assistant's tool request to history
 
             for (const toolCall of aiMessage.tool_calls) {
-                const toolName = toolCall.function.name;
-                const args = JSON.parse(toolCall.function.arguments);
+                try {
+                    const toolName = toolCall.function.name;
+                    console.log(`[AGENT] Raw Tool Call: ${JSON.stringify(toolCall)}`);
 
-                console.log(`[AGENT] Executing tool: ${toolName}`, args);
-                ctx.sendChatAction('typing');
-
-                let toolResult = "Error executing tool.";
-
-                if (toolName === 'searchWeb') {
-                    toolResult = await searchWeb(args.query);
-                } else if (toolName === 'getGlobalTime') {
-                    // ... (Time Logic Inline for simplicitly or Refactored) ...
-                    // Re-using the logic we wrote before but inside the loop to avoid duplication
-                    const timezones = {
-                        'venezuela': 'America/Caracas',
-                        'caracas': 'America/Caracas',
-                        'argentina': 'America/Argentina/Buenos_Aires',
-                        'buenos aires': 'America/Argentina/Buenos_Aires',
-                        'chile': 'America/Santiago',
-                        'santiago': 'America/Santiago',
-                        'colombia': 'America/Bogota',
-                        'bogota': 'America/Bogota',
-                        'españa': 'Europe/Madrid',
-                        'madrid': 'Europe/Madrid',
-                        'mexico': 'America/Mexico_City',
-                        'cdmx': 'America/Mexico_City',
-                        'peru': 'America/Lima',
-                        'lima': 'America/Lima',
-                        'miami': 'America/New_York',
-                        'new york': 'America/New_York'
-                    };
-                    const locLower = args.location.toLowerCase();
-                    let tz = null;
-                    for (const [key, val] of Object.entries(timezones)) {
-                        if (locLower.includes(key)) tz = val;
+                    let args = {};
+                    try {
+                        args = JSON.parse(toolCall.function.arguments);
+                    } catch (parseErr) {
+                        console.error(`[AGENT] JSON Parse Failed: ${toolCall.function.arguments}`);
+                        messages.push({
+                            tool_call_id: toolCall.id,
+                            role: "tool",
+                            name: toolName,
+                            content: "Error: Invalid JSON arguments provided."
+                        });
+                        continue;
                     }
 
-                    if (tz) {
-                        const axios = require('axios');
-                        try {
-                            const resp = await axios.get(`https://timeapi.io/api/Time/current/zone?timeZone=${tz}`);
-                            toolResult = `Hora Exacta (API): ${resp.data.time} - Fecha: ${resp.data.date} - Zona: ${tz}`;
-                        } catch (e) { toolResult = "Error conectando a TimeAPI."; }
-                    } else {
-                        toolResult = await searchWeb(`current time in ${args.location} timeanddate.com`);
+                    console.log(`[AGENT] Executing tool: ${toolName}`, args);
+                    ctx.sendChatAction('typing');
+
+                    let toolResult = "Error executing tool.";
+
+                    if (toolName === 'searchWeb') {
+                        toolResult = await searchWeb(args.query);
+                    } else if (toolName === 'getGlobalTime') {
+                        // ... Time Logic ...
+                        const timezones = {
+                            'venezuela': 'America/Caracas',
+                            'caracas': 'America/Caracas',
+                            'argentina': 'America/Argentina/Buenos_Aires',
+                            'buenos aires': 'America/Argentina/Buenos_Aires',
+                            'chile': 'America/Santiago',
+                            'santiago': 'America/Santiago',
+                            'colombia': 'America/Bogota',
+                            'bogota': 'America/Bogota',
+                            'españa': 'Europe/Madrid',
+                            'madrid': 'Europe/Madrid',
+                            'mexico': 'America/Mexico_City',
+                            'cdmx': 'America/Mexico_City',
+                            'peru': 'America/Lima',
+                            'lima': 'America/Lima',
+                            'miami': 'America/New_York',
+                            'new york': 'America/New_York'
+                        };
+                        const locLower = (args.location || '').toLowerCase();
+                        let tz = null;
+                        for (const [key, val] of Object.entries(timezones)) {
+                            if (locLower.includes(key)) tz = val;
+                        }
+
+                        if (tz) {
+                            const axios = require('axios');
+                            try {
+                                const resp = await axios.get(`https://timeapi.io/api/Time/current/zone?timeZone=${tz}`);
+                                toolResult = `Hora Exacta (API): ${resp.data.time} - Fecha: ${resp.data.date} - Zona: ${tz}`;
+                            } catch (e) { toolResult = "Error conectando a TimeAPI."; }
+                        } else {
+                            toolResult = await searchWeb(`current time in ${args.location} timeanddate.com`);
+                        }
                     }
+
+                    messages.push({
+                        tool_call_id: toolCall.id,
+                        role: "tool",
+                        name: toolName,
+                        content: toolResult
+                    });
+                } catch (toolErr) {
+                    console.error(`[AGENT] Tool Execution Error (${toolCall.function.name}):`, toolErr);
+                    messages.push({
+                        tool_call_id: toolCall.id,
+                        role: "tool",
+                        name: toolCall.function.name,
+                        content: "Error internamente al ejecutar la herramienta."
+                    });
                 }
-
-                messages.push({
-                    tool_call_id: toolCall.id,
-                    role: "tool",
-                    name: toolName,
-                    content: toolResult
-                });
             }
 
             // RECURSIVE CALL: Feed tool results back to the agent
