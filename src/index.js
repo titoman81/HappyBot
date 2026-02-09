@@ -384,11 +384,15 @@ async function init() {
             console.log('[DEBUG] AI Response success');
 
             // Recursive search handling (max 2 attempts)
+            // Recursive search handling (max 2 attempts)
             let searchCount = 0;
-            while ((response.includes('[SEARCH:') || response.includes('SEARCH:')) && searchCount < 2) {
-                const searchMatch = response.match(/(?:\[)?SEARCH:\s*(.*?)(?:\]|$)/i);
+            // Enhanced regex to catch [SEARCH: ...], SEARCH: ..., or code blocks
+            const searchRegex = /(?:`{1,3})?(?:\[)?SEARCH:\s*([^[\]`\n]+)(?:\])?(?:`{1,3})?/i;
+
+            while (searchRegex.test(response) && searchCount < 2) {
+                const searchMatch = response.match(searchRegex);
                 if (searchMatch) {
-                    const query = searchMatch[1].replace(/\]$/, '').trim();
+                    const query = searchMatch[1].trim();
                     console.log(`[DEBUG] Executing search ${searchCount + 1}: ${query}`);
                     ctx.sendChatAction('typing');
                     const searchResults = await searchWeb(query);
